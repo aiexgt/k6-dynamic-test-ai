@@ -1,0 +1,81 @@
+[
+  {
+    "id": "flow-mvpl20cy",
+    "name": "Carrito 2P Contado",
+    "description": "",
+    "steps": [
+      {
+        "id": "step-mvpl01fi-qjo",
+        "category": "Crear Carrito",
+        "variantId": "kcc-mvpkxv4f-2",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl04ku-yxt",
+        "category": "Agregar Dirección Envio",
+        "variantId": "kcc-mvpkxv4f-3",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl079c-d4r",
+        "category": "Agregar Productos",
+        "variantId": "kcc-mvpkxv4f-5",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl0al3-0jn",
+        "category": "Agregar Productos",
+        "variantId": "kcc-mvpkxv4f-10",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl0elq-1ek",
+        "category": "Agregar Dirección Facturación",
+        "variantId": "kcc-mvpkxv4f-13",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl0hyk-gph",
+        "category": "Agregar Tipo Envio",
+        "variantId": "kcc-mvpkxv4f-17",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl0ldg-z4l",
+        "category": "Agregar Método de Pago",
+        "variantId": "kcc-mvpkxv4f-37",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl101g-1jn",
+        "category": "Completar Carrito",
+        "variantId": "kcc-mvpkxv4f-40",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl17pe-e5x",
+        "category": "Completar Carrito",
+        "variantId": "kcc-mvpkxv4f-38",
+        "skipped": false,
+        "overrideVariables": {}
+      },
+      {
+        "id": "step-mvpl1kos-1e1",
+        "category": "Finalizar Carrito",
+        "variantId": "kcc-mvpkxv4f-41",
+        "skipped": false,
+        "overrideVariables": {}
+      }
+    ],
+    "createdAt": "2026-10-26T18:21:22.642Z",
+    "updatedAt": "2026-10-26T18:21:22.642Z"
+  }
+]

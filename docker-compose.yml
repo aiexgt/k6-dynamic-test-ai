@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  # Base de Datos PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: magento-flow-runner-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: flowrunner
+      POSTGRES_USER: runner
+      POSTGRES_PASSWORD: runner_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U runner -d flowrunner"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # Aplicación Magento Flow Runner (Backend + Frontend integrado)
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: magento-flow-runner-app
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    env_file:
+      - .env
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - DATABASE_URL=postgresql://runner:runner_password@db:5432/flowrunner
+      - LOCAL_DATABASE_URL=postgresql://runner:runner_password@db:5432/flowrunner
+      - SHARED_DATABASE_URL=${SHARED_DATABASE_URL:-}
+      - ADMIN_SECRET_KEY=${ADMIN_SECRET_KEY:-admin_flowrunner_2026}
+      - NODE_TLS_REJECT_UNAUTHORIZED=0
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+      - "app.kosmos.test:host-gateway"
+      - "staging.kosmos.test:host-gateway"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - app_data:/app/server/data
+
+volumes:
+  postgres_data:
+    driver: local
+  app_data:
+    driver: local

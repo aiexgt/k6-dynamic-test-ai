@@ -1,0 +1,16 @@
+node_modules
+client/node_modules
+server/node_modules
+client/dist
+server/dist
+.git
+.gitignore
+.env
+*.log
+backups
+*.sql
+server/data/backups
+server/data/history.json
+server/data/environments.json
+server/data/settings.json
+server/data/versions.json

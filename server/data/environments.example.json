@@ -1,0 +1,42 @@
+[
+  {
+    "id": "env-local-kosmos",
+    "name": "Local Kosmos",
+    "magentoUrl": "https://app.kosmos.test/graphql",
+    "storeCode": "max_com_gt",
+    "customHeaders": {
+      "Content-Type": "application/json",
+      "AuthToken": "TU_AUTH_TOKEN_AQUI",
+      "Store": "max_com_gt",
+      "X-Client-Type": "1"
+    },
+    "useMockSimulator": false,
+    "createdAt": "2026-10-26T17:42:00.000Z",
+    "updatedAt": "2026-10-26T17:53:04.586Z"
+  },
+  {
+    "id": "env-mock-sim",
+    "name": "Simulador Mock",
+    "magentoUrl": "http://localhost:4000/api/mock/graphql",
+    "storeCode": "default",
+    "customHeaders": {
+      "Content-Type": "application/json"
+    },
+    "useMockSimulator": true,
+    "createdAt": "2026-10-26T17:42:00.000Z",
+    "updatedAt": "2026-10-26T17:42:00.000Z"
+  },
+  {
+    "id": "env-staging-kcc",
+    "name": "Staging KCC",
+    "magentoUrl": "https://staging.kosmos.test/graphql",
+    "storeCode": "max_com_gt",
+    "customHeaders": {
+      "Content-Type": "application/json",
+      "Store": "max_com_gt"
+    },
+    "useMockSimulator": false,
+    "createdAt": "2026-10-26T17:42:00.000Z",
+    "updatedAt": "2026-10-26T17:42:00.000Z"
+  }
+]

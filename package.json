@@ -1,0 +1,14 @@
+{
+  "name": "magento-flow-runner",
+  "version": "1.0.0",
+  "description": "Magento 2 GraphQL Flow Runner & Benchmarker",
+  "scripts": {
+    "build": "cd client && npm run build && cd ../server && npm run build",
+    "start": "cd server && npm start",
+    "dev:server": "cd server && npm run dev",
+    "dev:client": "cd client && npm run dev"
+  },
+  "keywords": ["magento2", "graphql", "checkout", "benchmark", "automation"],
+  "author": "Antigravity Engineering",
+  "license": "MIT"
+}
