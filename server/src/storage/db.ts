@@ -445,19 +445,6 @@ export class Database {
         data JSONB NOT NULL,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
-
-      CREATE TABLE IF NOT EXISTS item_versions (
-        id VARCHAR(255) PRIMARY KEY,
-        entity_type VARCHAR(50) NOT NULL,
-        entity_id VARCHAR(255) NOT NULL,
-        version_number INT NOT NULL,
-        snapshot JSONB NOT NULL,
-        created_by VARCHAR(255),
-        created_by_name VARCHAR(255),
-        change_summary TEXT,
-        created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_item_versions_local ON item_versions(entity_type, entity_id, version_number DESC);
     `);
     console.log('🧱 [DB Local] Tablas de Entornos, Secretos e Historial migradas.');
   }
