@@ -859,7 +859,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                   setDragEnabledIndex(null);
                   handleDragEnd();
                 }}
-                className={`border rounded-2xl transition-all shadow-xs ${
+                className={`border rounded-xl transition-all shadow-xs ${
                   draggedIndex === idx
                     ? 'opacity-40 border-dashed border-orange-500 scale-[0.99]'
                     : dragOverIndex === idx && draggedIndex !== idx
@@ -871,14 +871,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                     : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
                 }`}
               >
-                <div className="p-4 sm:p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 min-h-[76px]">
+                <div className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
                   {/* Step Index & Order Reorder */}
-                  <div className="flex items-center gap-2 min-w-[85px]">
+                  <div className="flex items-center gap-1.5 min-w-[75px]">
                     {/* Drag Handle - solo este elemento activa el drag & drop */}
                     <div
                       onMouseDown={() => setDragEnabledIndex(idx)}
                       onMouseUp={() => setDragEnabledIndex(null)}
-                      className="cursor-grab active:cursor-grabbing p-1.5 text-slate-400 hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors select-none"
+                      className="cursor-grab active:cursor-grabbing p-1 text-slate-400 hover:text-orange-500 transition-colors select-none"
                       title="Arrastrar para reordenar paso"
                     >
                       <GripVertical className="w-4 h-4" />
@@ -888,7 +888,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       <button
                         disabled={idx === 0}
                         onClick={() => handleMoveStep(idx, 'up')}
-                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20"
+                        className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20"
                         title="Subir paso"
                       >
                         <ArrowUp className="w-3 h-3" />
@@ -896,20 +896,20 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       <button
                         disabled={idx === steps.length - 1}
                         onClick={() => handleMoveStep(idx, 'down')}
-                        className="p-1 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20"
+                        className="p-0.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 disabled:opacity-20"
                         title="Bajar paso"
                       >
                         <ArrowDown className="w-3 h-3" />
                       </button>
                     </div>
 
-                    <span className="w-7 h-7 rounded-xl bg-slate-100 dark:bg-slate-800 text-xs font-mono font-bold text-slate-600 dark:text-slate-300 flex items-center justify-center">
+                    <span className="text-xs font-mono font-bold text-slate-400 w-5 text-center">
                       #{idx + 1}
                     </span>
                   </div>
 
                   {/* 1. Categoría Selector con Buscador */}
-                  <div className="w-full sm:w-52 lg:w-56">
+                  <div className="w-full sm:w-44 md:w-48">
                     <SearchableSelect
                       disabled={isSkipped}
                       options={categoryOptions}
@@ -920,7 +920,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                   </div>
 
                   {/* 2. Variante Selector con Buscador (FILTRADA POR CATEGORÍA) y Botón de Edición Directa */}
-                  <div className="flex-1 w-full flex items-center gap-2">
+                  <div className="flex-1 w-full flex items-center gap-1.5">
                     <div className="flex-1">
                       <SearchableSelect
                         disabled={isSkipped}
@@ -936,7 +936,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                     </div>
 
                     {selectedVar?.apiType === 'REST' && (
-                      <span className="text-[10px] font-mono px-2 py-1.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 font-bold shrink-0">
+                      <span className="text-[10px] font-mono px-2 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 font-bold shrink-0">
                         {selectedVar.method || 'POST'}
                       </span>
                     )}
@@ -945,7 +945,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       <button
                         type="button"
                         onClick={() => handleEditVariantFromStep(step.variantId!)}
-                        className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:border-orange-300 dark:hover:border-orange-800 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-all shrink-0 shadow-2xs"
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-500 hover:text-orange-600 dark:hover:text-orange-400 hover:border-orange-300 dark:hover:border-orange-800 hover:bg-orange-50/50 dark:hover:bg-orange-950/20 transition-all shrink-0 shadow-2xs"
                         title="Editar variante directamente"
                       >
                         <Edit2 className="w-3.5 h-3.5" />
@@ -954,10 +954,10 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                   </div>
 
                   {/* Action Buttons: Skip, Variables, Run Step, Delete */}
-                  <div className="flex items-center justify-end gap-2 min-w-[175px]">
+                  <div className="flex items-center justify-end gap-1.5 min-w-[160px]">
                     {stepResult && (
-                      <div className="flex items-center gap-1.5 font-mono text-xs">
-                        <span className="font-bold px-2 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
+                      <div className="flex items-center gap-1 font-mono text-xs">
+                        <span className="font-bold px-1.5 py-0.5 rounded-md bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
                           {stepResult.skipped ? 'SKIP' : `${stepResult.durationMs}ms`}
                         </span>
                         <button
@@ -973,7 +973,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                     <button
                       type="button"
                       onClick={() => handleToggleSkip(step.id)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                      className={`px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
                         isSkipped
                           ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 border-slate-200 dark:border-slate-700'
                           : 'bg-slate-50 dark:bg-slate-950 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300'
@@ -986,7 +986,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       <button
                         type="button"
                         onClick={() => handleToggleExpandVars(step.id)}
-                        className={`p-2 rounded-xl border text-xs transition-colors ${
+                        className={`p-1.5 rounded-lg border text-xs transition-colors ${
                           expandedVars[step.id]
                             ? 'border-orange-500 text-orange-500 bg-orange-50 dark:bg-orange-950/20'
                             : 'border-slate-200 dark:border-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
@@ -1001,13 +1001,13 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       <button
                         disabled={isCurrentRunning || isExecutingAll}
                         onClick={() => handleExecuteSingleStep(step)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-orange-600 hover:text-white dark:hover:bg-orange-600 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all disabled:opacity-50"
+                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-orange-600 hover:text-white dark:hover:bg-orange-600 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all disabled:opacity-50"
                         title="Ejecutar solo este paso"
                       >
                         {isCurrentRunning ? (
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin text-orange-500" />
+                          <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />
                         ) : (
-                          <Play className="w-3.5 h-3.5 fill-current text-orange-500" />
+                          <Play className="w-3 h-3 fill-current text-orange-500" />
                         )}
                         <span>Paso</span>
                       </button>
@@ -1018,14 +1018,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                       className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
                       title="Eliminar este paso"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
 
                 {/* Drawer de Variables */}
                 {!isSkipped && expandedVars[step.id] && (
-                  <div className="px-4 pb-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 rounded-b-2xl space-y-2">
+                  <div className="px-3 pb-3 pt-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 rounded-b-xl space-y-2">
                     <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
                       <div className="flex items-center gap-1.5">
                         <Sliders className="w-3.5 h-3.5 text-orange-500" />
