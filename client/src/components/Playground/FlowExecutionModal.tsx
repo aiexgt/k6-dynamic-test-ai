@@ -289,22 +289,6 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
       });
       setDatasetResults([...consolidatedDatasetMetrics]);
 
-      // Record history entry for this iteration
-      try {
-        const iterSuffix = rowsToRun.length > 1 ? ` [Fila ${rIdx + 1}]` : '';
-        await api.recordFlowHistory({
-          flowName: (flowName || 'Flujo de Checkout') + iterSuffix,
-          status: rowStatus,
-          orderNumber: runningCtx.orderNumber,
-          totalTimeMs: rowDuration,
-          failedAtCategory: failedCat,
-          errorMessage: failedErrMsg || undefined,
-          steps: executedStepsList
-        });
-      } catch (recErr) {
-        console.error('Error saving flow history:', recErr);
-      }
-
       finalCollector = resultsCollector;
       finalRunningCtx = runningCtx;
       overallFinalResp = {
@@ -326,6 +310,11 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
     const anyFailed = consolidatedDatasetMetrics.some(m => m.status === 'FAILED');
     const anyTestsFailed = consolidatedDatasetMetrics.some(m => m.status === 'TESTS_FAILED');
+    const consolidatedStatus: 'SUCCESS' | 'FAILED' | 'TESTS_FAILED' = anyFailed
+      ? 'FAILED'
+      : anyTestsFailed
+      ? 'TESTS_FAILED'
+      : 'SUCCESS';
 
     if (anyFailed) {
       setFlowStatus('failed');
@@ -333,10 +322,28 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
       setFlowStatus('success');
     }
 
+    // Consolidated single record in History for the entire run
+    const totalDuration = consolidatedDatasetMetrics.reduce((acc, curr) => acc + curr.durationMs, 0);
+    const lastFailed = consolidatedDatasetMetrics.find(m => m.status === 'FAILED');
+    const datasetInfo = rowsToRun.length > 1 ? ` [Dataset: ${rowsToRun.length} iteraciones]` : '';
+
+    try {
+      await api.recordFlowHistory({
+        flowName: (flowName || 'Flujo de Checkout') + datasetInfo,
+        status: consolidatedStatus,
+        orderNumber: finalRunningCtx.orderNumber,
+        totalTimeMs: totalDuration,
+        failedAtCategory: lastFailed ? (overallFinalResp?.failedAtCategory || 'Paso') : null,
+        errorMessage: lastFailed?.errorMessage || undefined,
+        steps: overallFinalResp?.steps || []
+      });
+    } catch (recErr) {
+      console.error('Error saving single consolidated flow history:', recErr);
+    }
+
     if (overallFinalResp) {
-      const consolidatedStatus = anyFailed ? 'FAILED' : anyTestsFailed ? 'TESTS_FAILED' : 'SUCCESS';
       onExecutionComplete(
-        { ...overallFinalResp, status: consolidatedStatus },
+        { ...overallFinalResp, status: consolidatedStatus, totalTimeMs: totalDuration },
         finalCollector,
         finalRunningCtx
       );
