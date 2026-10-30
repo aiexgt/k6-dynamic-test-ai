@@ -219,6 +219,7 @@ apiRouter.post('/flows', (req: Request, res: Response) => {
     name,
     description: description || '',
     steps,
+    dataset: req.body.dataset,
     isLocked: false,
     createdBy: user.email,
     createdByName: user.name,

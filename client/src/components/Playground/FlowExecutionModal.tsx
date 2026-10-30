@@ -151,6 +151,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
     const rowsToRun = dataset && dataset.rows && dataset.rows.length > 0 ? dataset.rows : [{}];
     const consolidatedDatasetMetrics: typeof datasetResults = [];
+    const allExecutedStepsAcrossRows: StepExecutionResult[] = [];
 
     let overallFinalResp: FlowExecutionResponse | null = null;
     let finalCollector: Record<string, StepExecutionResult> = {};
@@ -211,7 +212,17 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
           if (abortControllerRef.current) break;
 
           resultsCollector[baseStep.id] = response.stepResult;
+          
+          // Formatear el nombre en el reporte para identificar la fila si hay dataset
+          const rowPrefix = rowsToRun.length > 1 ? `[Fila ${rIdx + 1}] ` : '';
+          const taggedStepResult: StepExecutionResult = {
+            ...response.stepResult,
+            category: rowPrefix + response.stepResult.category
+          };
+
           executedStepsList.push(response.stepResult);
+          allExecutedStepsAcrossRows.push(taggedStepResult);
+
           runningCtx = response.updatedContext;
           setCurrentContext(runningCtx);
           setStepResultsMap({ ...resultsCollector });
@@ -322,7 +333,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
       setFlowStatus('success');
     }
 
-    // Consolidated single record in History for the entire run
+    // Consolidated single record in History containing ALL steps executed across all dataset rows
     const totalDuration = consolidatedDatasetMetrics.reduce((acc, curr) => acc + curr.durationMs, 0);
     const lastFailed = consolidatedDatasetMetrics.find(m => m.status === 'FAILED');
     const datasetInfo = rowsToRun.length > 1 ? ` [Dataset: ${rowsToRun.length} iteraciones]` : '';
@@ -335,7 +346,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
         totalTimeMs: totalDuration,
         failedAtCategory: lastFailed ? (overallFinalResp?.failedAtCategory || 'Paso') : null,
         errorMessage: lastFailed?.errorMessage || undefined,
-        steps: overallFinalResp?.steps || []
+        steps: allExecutedStepsAcrossRows.length > 0 ? allExecutedStepsAcrossRows : (overallFinalResp?.steps || [])
       });
     } catch (recErr) {
       console.error('Error saving single consolidated flow history:', recErr);
