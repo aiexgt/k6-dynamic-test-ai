@@ -341,24 +341,27 @@ export const api = {
       body: JSON.stringify({ environmentId: id })
     });
     if (!res.ok) throw new Error('Error selecting environment');
-    return res.json();
+    const data = await res.json();
+    return data.settings || data;
   },
 
   // Global Tests
   async getGlobalTests(): Promise<GlobalTestConfig[]> {
     const res = await fetch(`${API_BASE}/global-tests`, { headers: getAuthHeaders() });
     if (!res.ok) throw new Error('Error fetching global tests');
-    return res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : data.tests || [];
   },
 
   async saveGlobalTests(tests: GlobalTestConfig[]): Promise<GlobalTestConfig[]> {
     const res = await fetch(`${API_BASE}/global-tests`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ tests })
+      body: JSON.stringify(tests)
     });
     if (!res.ok) throw new Error('Error saving global tests');
-    return res.json();
+    const data = await res.json();
+    return Array.isArray(data) ? data : data.tests || [];
   },
 
   // Flow Execution

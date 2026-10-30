@@ -487,7 +487,12 @@ apiRouter.post('/environments/select', (req: Request, res: Response) => {
     useMockSimulator: env.useMockSimulator
   };
   Database.saveSettings(newSettings);
-  return res.json({ success: true, activeEnvironment: env, settings: newSettings });
+  return res.json({
+    ...newSettings,
+    success: true,
+    activeEnvironment: env,
+    settings: newSettings
+  });
 });
 
 // --- GLOBAL QUALITY GATES / TESTS CRUD (Requirement 4) ---
@@ -496,12 +501,12 @@ apiRouter.get('/global-tests', (_req: Request, res: Response) => {
 });
 
 apiRouter.post('/global-tests', (req: Request, res: Response) => {
-  const tests = req.body;
+  const tests = Array.isArray(req.body) ? req.body : req.body?.tests;
   if (!Array.isArray(tests)) {
     return res.status(400).json({ error: 'Array of global tests is required' });
   }
   Database.saveGlobalTests(tests as GlobalTestConfig[]);
-  return res.json({ success: true, tests: Database.getGlobalTests() });
+  return res.json(Database.getGlobalTests());
 });
 
 // --- FLOW EXECUTION ENGINE ---

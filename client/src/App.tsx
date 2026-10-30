@@ -180,11 +180,14 @@ export function App() {
 
   const handleSelectEnvironment = async (envId: string) => {
     try {
+      setSettings(prev => (prev ? { ...prev, activeEnvironmentId: envId } : ({ activeEnvironmentId: envId } as any)));
       const result = await api.selectEnvironment(envId);
-      setSettings(result);
+      const updatedSettings = (result as any)?.settings || result;
+      setSettings(updatedSettings);
       toast('Entorno cambiado con éxito', 'success');
     } catch (err: any) {
       toast(`Error al cambiar entorno: ${err.message}`, 'error');
+      loadEnvironmentsData();
     }
   };
 
