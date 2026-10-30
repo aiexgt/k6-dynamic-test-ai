@@ -383,7 +383,8 @@ export const api = {
     step: FlowStepConfig,
     context?: Partial<ExecutionContext>,
     settings?: Partial<EnvironmentSettings>,
-    recordHistory: boolean = true
+    recordHistory: boolean = true,
+    signal?: AbortSignal
   ): Promise<{
     stepResult: StepExecutionResult;
     updatedContext: ExecutionContext;
@@ -392,7 +393,8 @@ export const api = {
     const res = await fetch(`${API_BASE}/flows/execute-step`, {
       method: 'POST',
       headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
-      body: JSON.stringify({ step, context, settings, recordHistory })
+      body: JSON.stringify({ step, context, settings, recordHistory }),
+      signal
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

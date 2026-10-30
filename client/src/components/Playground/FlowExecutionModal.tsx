@@ -6,7 +6,8 @@ import {
   Check,
   AlertTriangle,
   Copy,
-  ExternalLink
+  ExternalLink,
+  Square
 } from 'lucide-react';
 import { FlowStepConfig, Variant, StepExecutionResult, ExecutionContext, FlowExecutionResponse, CsvDataset } from '../../types';
 import { api } from '../../api';
@@ -122,8 +123,24 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
   const activeSteps = steps.filter(s => !s.skipped && s.variantId);
   const abortControllerRef = useRef<boolean>(false);
+  const fetchAbortControllerRef = useRef<AbortController | null>(null);
 
   const waypoints = getMountainWaypoints(activeSteps.length);
+
+  const handleAbort = () => {
+    abortControllerRef.current = true;
+    if (fetchAbortControllerRef.current) {
+      try {
+        fetchAbortControllerRef.current.abort();
+      } catch {
+        // ignore
+      }
+    }
+    setIsRunning(false);
+    setFlowStatus('failed');
+    setFailureType('GENERAL_ERROR');
+    setFailedError('Ejecución abortada por el usuario');
+  };
 
   // Close with Escape key
   useEffect(() => {
@@ -156,6 +173,13 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
       startExecution();
     } else {
       abortControllerRef.current = true;
+      if (fetchAbortControllerRef.current) {
+        try {
+          fetchAbortControllerRef.current.abort();
+        } catch {
+          // ignore
+        }
+      }
       setIsRunning(false);
     }
   }, [isOpen]);
@@ -164,6 +188,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
     if (activeSteps.length === 0) return;
 
     abortControllerRef.current = false;
+    fetchAbortControllerRef.current = new AbortController();
     setIsRunning(true);
     setFlowStatus('running');
     setFailedError(null);
@@ -231,7 +256,13 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
         setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'running' }));
 
         try {
-          const response = await api.executeStep(stepWithCsvVars, runningCtx, undefined, false);
+          const response = await api.executeStep(
+            stepWithCsvVars,
+            runningCtx,
+            undefined,
+            false,
+            fetchAbortControllerRef.current?.signal
+          );
           if (abortControllerRef.current) break;
 
           resultsCollector[baseStep.id] = response.stepResult;
@@ -464,6 +495,17 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {isRunning && (
+              <button
+                onClick={handleAbort}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-md animate-pulse"
+                title="Detener ejecución inmediatamente"
+              >
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Abortar Prueba</span>
+              </button>
+            )}
+
             {!isRunning && (
               <button
                 onClick={startExecution}
@@ -985,16 +1027,26 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
             </div>
           )}
 
-          {/* IN PROGRESS FOOTER (Clean subtle indicator) */}
+          {/* IN PROGRESS FOOTER (Clean subtle indicator + Abort Button) */}
           {flowStatus === 'running' && (
-            <div className="backdrop-blur-md bg-white/90 dark:bg-slate-950/60 border border-slate-200/90 dark:border-white/10 px-5 py-2.5 rounded-full flex items-center gap-3 text-xs text-slate-700 dark:text-slate-300 shadow-sm transition-colors">
-              <div className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
-              <span className="font-medium">
-                {dataset && dataset.rows && dataset.rows.length > 1
-                  ? `[Fila ${currentDatasetRowIndex + 1}/${dataset.rows.length}] Goku subiendo la montaña: `
-                  : 'Goku subiendo la montaña: '}
-                {activeSteps[currentStepIndex]?.category || variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || 'Petición en curso'}
-              </span>
+            <div className="backdrop-blur-md bg-white/90 dark:bg-slate-950/60 border border-slate-200/90 dark:border-white/10 px-5 py-2.5 rounded-full flex items-center gap-4 text-xs text-slate-700 dark:text-slate-300 shadow-sm transition-colors">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
+                <span className="font-medium">
+                  {dataset && dataset.rows && dataset.rows.length > 1
+                    ? `[Fila ${currentDatasetRowIndex + 1}/${dataset.rows.length}] Goku subiendo la montaña: `
+                    : 'Goku subiendo la montaña: '}
+                  {activeSteps[currentStepIndex]?.category || variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || 'Petición en curso'}
+                </span>
+              </div>
+              <button
+                onClick={handleAbort}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-bold shadow-xs transition-colors shrink-0"
+                title="Detener prueba ahora"
+              >
+                <Square className="w-3 h-3 fill-current" />
+                <span>Abortar</span>
+              </button>
             </div>
           )}
 

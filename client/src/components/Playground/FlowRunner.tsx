@@ -12,13 +12,13 @@ import {
   ExternalLink,
   Copy,
   Check,
-  RefreshCw,
   Save,
   Edit2,
   GripVertical,
   Lock,
   History,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Square
 } from 'lucide-react';
 import {
   Variant,
@@ -59,6 +59,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
 
   // Execution states
   const [runningStepId, setRunningStepId] = useState<string | null>(null);
+  const stepAbortControllerRef = React.useRef<AbortController | null>(null);
   const [stepResults, setStepResults] = useState<Record<string, StepExecutionResult>>({});
   const [executionContext, setExecutionContext] = useState<ExecutionContext>({
     cartId: null,
@@ -523,13 +524,31 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
     setIsExecutionModalOpen(true);
   };
 
+  // Abort running step execution
+  const handleAbortRunningStep = () => {
+    if (stepAbortControllerRef.current) {
+      stepAbortControllerRef.current.abort();
+      stepAbortControllerRef.current = null;
+    }
+    setRunningStepId(null);
+    toast('Paso abortado por el usuario', 'info');
+  };
+
   // Single Step Execution
   const handleExecuteSingleStep = async (step: FlowStepConfig) => {
     if (step.skipped || !step.variantId) return;
     setRunningStepId(step.id);
+    const controller = new AbortController();
+    stepAbortControllerRef.current = controller;
 
     try {
-      const response = await api.executeStep(step, executionContext);
+      const response = await api.executeStep(
+        step,
+        executionContext,
+        undefined,
+        true,
+        controller.signal
+      );
       setStepResults(prev => ({ ...prev, [step.id]: response.stepResult }));
       setExecutionContext(response.updatedContext);
 
@@ -546,9 +565,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
         });
       }
     } catch (err: any) {
-      toast(`Error en paso: ${err.message}`, 'error');
+      if (err.name === 'AbortError' || controller.signal.aborted) {
+        toast('Paso abortado por el usuario', 'info');
+      } else {
+        toast(`Error en paso: ${err.message}`, 'error');
+      }
     } finally {
       setRunningStepId(null);
+      stepAbortControllerRef.current = null;
     }
   };
 
@@ -716,6 +740,17 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
 
         {/* Right: Actions */}
         <div className="flex items-center gap-2">
+          {runningStepId && (
+            <button
+              onClick={handleAbortRunningStep}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition-all shadow-sm animate-pulse"
+              title="Abortar paso en ejecución"
+            >
+              <Square className="w-3.5 h-3.5 fill-current" />
+              <span>Abortar Paso</span>
+            </button>
+          )}
+
           <button
             disabled={isExecutingAll || !!runningStepId || steps.length === 0}
             onClick={handleExecuteNextStep}
@@ -1033,19 +1068,26 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
                     )}
 
                     {!isSkipped && (
-                      <button
-                        disabled={isCurrentRunning || isExecutingAll}
-                        onClick={() => handleExecuteSingleStep(step)}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-orange-600 hover:text-white dark:hover:bg-orange-600 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all disabled:opacity-50"
-                        title="Ejecutar solo este paso"
-                      >
-                        {isCurrentRunning ? (
-                          <RefreshCw className="w-3 h-3 animate-spin text-orange-500" />
-                        ) : (
+                      isCurrentRunning ? (
+                        <button
+                          onClick={handleAbortRunningStep}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow-xs transition-all animate-pulse"
+                          title="Abortar este paso inmediatamente"
+                        >
+                          <Square className="w-3 h-3 fill-current" />
+                          <span>Abortar</span>
+                        </button>
+                      ) : (
+                        <button
+                          disabled={isCurrentRunning || isExecutingAll}
+                          onClick={() => handleExecuteSingleStep(step)}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-orange-600 hover:text-white dark:hover:bg-orange-600 text-slate-700 dark:text-slate-300 text-xs font-bold border border-slate-200 dark:border-slate-700 transition-all disabled:opacity-50"
+                          title="Ejecutar solo este paso"
+                        >
                           <Play className="w-3 h-3 fill-current text-orange-500" />
-                        )}
-                        <span>Paso</span>
-                      </button>
+                          <span>Paso</span>
+                        </button>
+                      )
                     )}
 
                     <button
