@@ -27,7 +27,7 @@ interface FlowExecutionModalProps {
   onInspectStep?: (stepResult: StepExecutionResult) => void;
 }
 
-// Compute natural zigzag climbing waypoints on the snowy mountain flank
+// Compute natural zigzag climbing waypoints on the snowy mountain flank (standard mode)
 function getMountainWaypoints(totalSteps: number): { x: number; y: number }[] {
   if (totalSteps <= 0) return [];
   if (totalSteps === 1) return [{ x: 505, y: 185 }];
@@ -46,6 +46,29 @@ function getMountainWaypoints(totalSteps: number): { x: number; y: number }[] {
     const x = Math.round(baseX + oscillation);
 
     return { x, y: Math.round(y) };
+  });
+}
+
+// Compute 3D elliptical orbit waypoints around the mountain for Dataset / CSV matrix mode
+function getMountainOrbitWaypoints(totalSteps: number, loopIndex: number, totalLoops: number): { x: number; y: number; inFront: boolean }[] {
+  if (totalSteps <= 0) return [];
+  
+  const cx = 500;
+  const rx = 340; // horizontal orbital radius around mountain
+  const ry = 95;  // vertical perspective squish (elliptical orbit)
+  
+  // As loops progress, Goku spirals up the mountain towards the summit
+  const loopT = totalLoops > 1 ? loopIndex / totalLoops : 0.5;
+  const baseCenterY = 580 - loopT * 260; // moves up from 580 to 320
+
+  return Array.from({ length: totalSteps }, (_, i) => {
+    // Each row completes a full 360 degree loop around the mountain
+    const angle = ((i / totalSteps) * Math.PI * 2) - Math.PI / 2; // starts in front
+    const x = Math.round(cx + Math.cos(angle) * rx);
+    const y = Math.round(baseCenterY + Math.sin(angle) * ry);
+    const inFront = Math.sin(angle) >= 0; // Front half of the mountain vs back half
+
+    return { x, y, inFront };
   });
 }
 
@@ -371,13 +394,28 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
   if (!isOpen) return null;
 
-  // Path SVG string connecting all waypoints
-  const pathD = waypoints.length > 0
-    ? waypoints.map((pt, idx) => (idx === 0 ? `M ${pt.x} ${pt.y}` : `L ${pt.x} ${pt.y}`)).join(' ')
+  const hasDataset = Boolean(dataset && dataset.rows && dataset.rows.length > 1);
+  const totalDatasetRows = dataset?.rows?.length || 1;
+
+  const orbitWaypoints = hasDataset
+    ? getMountainOrbitWaypoints(activeSteps.length, currentDatasetRowIndex, totalDatasetRows)
+    : [];
+
+  const effectiveWaypoints = hasDataset
+    ? orbitWaypoints
+    : waypoints;
+
+  // Path SVG string connecting waypoints
+  const pathD = effectiveWaypoints.length > 0
+    ? effectiveWaypoints.map((pt, idx) => (idx === 0 ? `M ${pt.x} ${pt.y}` : `L ${pt.x} ${pt.y}`)).join(' ')
     : '';
 
+  // If in dataset orbit mode, close the orbital loop visually
+  const closedPathD = hasDataset && pathD ? `${pathD} Z` : pathD;
+
   // Current climber position
-  const currentPt = waypoints[currentStepIndex] || waypoints[0] || { x: 505, y: 185 };
+  const currentPt = effectiveWaypoints[currentStepIndex] || effectiveWaypoints[0] || { x: 505, y: 185, inFront: true };
+  const isInFront = (currentPt as any).inFront ?? true;
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-2 sm:p-4 bg-slate-900/35 dark:bg-slate-950/85 backdrop-blur-md transition-colors duration-200">
@@ -556,14 +594,14 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
               <circle cx="0" cy="80" r="9" fill="#e11d48" stroke="#ffffff" strokeWidth="3" />
             </g>
 
-            {/* RED DASHED CLIMBING TRAIL */}
-            {pathD && (
+            {/* RED / ORANGE ORBITAL OR CLIMBING TRAIL */}
+            {closedPathD && (
               <path
-                d={pathD}
+                d={closedPathD}
                 fill="none"
-                stroke="#e11d48"
-                strokeWidth="4"
-                strokeDasharray="8 8"
+                stroke={hasDataset ? "#f97316" : "#e11d48"}
+                strokeWidth={hasDataset ? "3.5" : "4"}
+                strokeDasharray={hasDataset ? "6 6" : "8 8"}
                 strokeLinecap="round"
                 strokeLinejoin="round"
                 className="drop-shadow-sm opacity-95"
@@ -571,7 +609,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
             )}
 
             {/* WAYPOINTS (EACH PETITION / REQUEST) */}
-            {waypoints.map((pt, idx) => {
+            {effectiveWaypoints.map((pt, idx) => {
               const step = activeSteps[idx];
               if (!step) return null;
               const variant = variants.find(v => v.id === step.variantId);
@@ -581,7 +619,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
               const isCompleted = status === 'success';
               const isFailed = status === 'failed';
 
-              const isRightSide = pt.x <= 620;
+              const isRightSide = pt.x <= 500;
               const labelX = isRightSide ? pt.x + 22 : pt.x - 22;
               const textAnchor = isRightSide ? 'start' : 'end';
 
@@ -683,13 +721,30 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
               );
             })}
 
-            {/* GOKU FROM DRAGON BALL Z CLIMBER */}
+            {/* GOKU FROM DRAGON BALL Z CLIMBER / ORBITER */}
             <g
               style={{
-                transform: `translate(${currentPt.x}px, ${currentPt.y}px)`,
-                transition: 'transform 0.75s cubic-bezier(0.34, 1.56, 0.64, 1)'
+                transform: `translate(${currentPt.x}px, ${currentPt.y}px) scale(${hasDataset ? (isInFront ? 1.05 : 0.85) : 1})`,
+                opacity: hasDataset ? (isInFront ? 1 : 0.65) : 1,
+                transition: 'transform 0.65s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.4s ease'
               }}
             >
+              {/* Goku Flying Nimbus Cloud (Kintoun / Nube Voladora) if orbiting with CSV! */}
+              {hasDataset && (
+                <g transform="translate(0, 10)">
+                  <path
+                    d="M -28 0 Q -24 -14 0 -14 Q 24 -14 28 0 Q 34 16 0 16 Q -34 16 -28 0 Z"
+                    fill="#facc15"
+                    stroke="#eab308"
+                    strokeWidth="1.5"
+                    className="animate-pulse"
+                  />
+                  <circle cx="-16" cy="2" r="9" fill="#facc15" />
+                  <circle cx="16" cy="2" r="9" fill="#facc15" />
+                  <circle cx="0" cy="5" r="11" fill="#fef08a" />
+                </g>
+              )}
+
               {/* Goku character group */}
               <g transform="translate(-20, -56)">
                 
