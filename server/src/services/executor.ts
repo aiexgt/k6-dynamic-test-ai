@@ -394,12 +394,11 @@ export class FlowExecutionService {
 
     const resolvedCartId = findVarValue('cartId', 'CartId', 'cart_id');
     const resolvedToken = findVarValue('customerToken', 'token', 'customer_token', 'AuthToken', 'authToken');
-    const resolvedOrderNumber = findVarValue('orderNumber', 'order_number');
+    const resolvedOrderNumber = context.orderNumber || '';
 
-    // Poblar en context si venían vacíos pero existen en el environment
+    // Poblar en context si venían vacíos pero existen en el environment (solo cart y token)
     if (!context.cartId && resolvedCartId) context.cartId = resolvedCartId;
     if (!context.token && resolvedToken) context.token = resolvedToken;
-    if (!context.orderNumber && resolvedOrderNumber) context.orderNumber = resolvedOrderNumber;
 
     // 3. Mezclar con variables del ExecutionContext y armonizar variantes de nombres
     const allContextVars: Record<string, any> = {

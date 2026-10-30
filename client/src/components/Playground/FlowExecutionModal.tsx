@@ -5,7 +5,6 @@ import {
   RotateCcw,
   Check,
   AlertTriangle,
-  ShoppingBag,
   Copy,
   ExternalLink
 } from 'lucide-react';
@@ -809,14 +808,14 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
             <div className="backdrop-blur-xl bg-white/95 dark:bg-slate-900/95 border border-emerald-500/40 shadow-2xl rounded-3xl p-4 sm:px-6 sm:py-4 max-w-2xl w-full flex flex-col sm:flex-row items-center justify-between gap-4 animate-in slide-in-from-bottom-5 duration-300">
               <div className="flex items-center gap-3.5 min-w-0 flex-1">
                 <div className="w-11 h-11 rounded-2xl bg-emerald-500 text-white flex items-center justify-center font-bold shadow-lg shadow-emerald-500/30 shrink-0">
-                  <ShoppingBag className="w-6 h-6" />
+                  <Check className="w-6 h-6" />
                 </div>
                 <div className="min-w-0 flex-1">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 block">
-                    ¡Cima Conquistada!
+                    ¡Flujo Exitoso!
                   </span>
                   <div className="text-base font-bold text-slate-900 dark:text-white font-mono truncate">
-                    {currentContext.orderNumber ? `Orden #${currentContext.orderNumber}` : 'Flujo Completado'}
+                    {currentContext.orderNumber ? `Orden #${currentContext.orderNumber}` : 'Todas las pruebas superadas'}
                   </div>
                 </div>
               </div>
