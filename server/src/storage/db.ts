@@ -367,6 +367,7 @@ export class Database {
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS deleted_by VARCHAR(255);
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS deleted_by_name VARCHAR(255);
+      ALTER TABLE flows ADD COLUMN IF NOT EXISTS dataset JSONB;
 
       -- Central Role & Security Configuration (Authoritative in Remote Shared DB)
       CREATE TABLE IF NOT EXISTS shared_team_members (
@@ -564,6 +565,7 @@ export class Database {
           name: r.name,
           description: r.description,
           steps: r.steps,
+          dataset: r.dataset || undefined,
           isLocked: !!r.is_locked,
           lockedBy: r.locked_by,
           lockedByName: r.locked_by_name,
@@ -954,23 +956,24 @@ export class Database {
   private static async insertFlowPg(pool: Pool, f: SavedFlow): Promise<void> {
     await pool.query(
       `INSERT INTO flows (
-        id, name, description, steps,
+        id, name, description, steps, dataset,
         is_locked, locked_by, locked_by_name, locked_at,
         created_by, created_by_name, updated_by, updated_by_name,
         is_deleted, deleted_at, deleted_by, deleted_by_name,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
       ON CONFLICT (id) DO UPDATE SET
-        name = $2, description = $3, steps = $4,
-        is_locked = $5, locked_by = $6, locked_by_name = $7, locked_at = $8,
-        updated_by = $11, updated_by_name = $12,
-        is_deleted = $13, deleted_at = $14, deleted_by = $15, deleted_by_name = $16,
-        updated_at = $18`,
+        name = $2, description = $3, steps = $4, dataset = $5,
+        is_locked = $6, locked_by = $7, locked_by_name = $8, locked_at = $9,
+        updated_by = $12, updated_by_name = $13,
+        is_deleted = $14, deleted_at = $15, deleted_by = $16, deleted_by_name = $17,
+        updated_at = $19`,
       [
         f.id,
         f.name,
         f.description || '',
         JSON.stringify(f.steps || []),
+        f.dataset ? JSON.stringify(f.dataset) : null,
         !!f.isLocked,
         f.lockedBy || null,
         f.lockedByName || null,

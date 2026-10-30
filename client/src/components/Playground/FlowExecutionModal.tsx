@@ -9,7 +9,7 @@ import {
   Copy,
   ExternalLink
 } from 'lucide-react';
-import { FlowStepConfig, Variant, StepExecutionResult, ExecutionContext, FlowExecutionResponse } from '../../types';
+import { FlowStepConfig, Variant, StepExecutionResult, ExecutionContext, FlowExecutionResponse, CsvDataset } from '../../types';
 import { api } from '../../api';
 
 interface FlowExecutionModalProps {
@@ -18,6 +18,7 @@ interface FlowExecutionModalProps {
   flowName: string;
   steps: FlowStepConfig[];
   variants: Variant[];
+  dataset?: CsvDataset;
   initialContext?: ExecutionContext;
   onExecutionComplete: (
     result: FlowExecutionResponse,
@@ -55,12 +56,24 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
   flowName,
   steps,
   variants,
+  dataset,
   initialContext,
   onExecutionComplete,
   onInspectStep
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
+  const [currentDatasetRowIndex, setCurrentDatasetRowIndex] = useState<number>(0);
+  const [datasetResults, setDatasetResults] = useState<
+    Array<{
+      rowIndex: number;
+      rowVariables: Record<string, any>;
+      status: 'SUCCESS' | 'FAILED' | 'TESTS_FAILED';
+      orderNumber?: string | null;
+      durationMs: number;
+      errorMessage?: string;
+    }>
+  >([]);
   const [stepStatusMap, setStepStatusMap] = useState<Record<string, 'pending' | 'running' | 'success' | 'failed'>>({});
   const [stepResultsMap, setStepResultsMap] = useState<Record<string, StepExecutionResult>>({});
   const [currentContext, setCurrentContext] = useState<ExecutionContext>(
@@ -135,150 +148,199 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
     setFailureType(null);
     setFailedStepResult(null);
     setCurrentStepIndex(0);
+    setDatasetResults([]);
 
-    const initialMap: Record<string, 'pending' | 'running' | 'success' | 'failed'> = {};
-    activeSteps.forEach(s => {
-      initialMap[s.id] = 'pending';
-    });
-    setStepStatusMap(initialMap);
+    const rowsToRun = dataset && dataset.rows && dataset.rows.length > 0 ? dataset.rows : [{}];
+    const consolidatedDatasetMetrics: typeof datasetResults = [];
 
-    const resultsCollector: Record<string, StepExecutionResult> = {};
-    let runningCtx: ExecutionContext = {
+    let overallFinalResp: FlowExecutionResponse | null = null;
+    let finalCollector: Record<string, StepExecutionResult> = {};
+    let finalRunningCtx: ExecutionContext = {
       cartId: null,
       token: null,
       orderNumber: null,
       variables: {},
       logs: []
     };
-    setCurrentContext(runningCtx);
 
-    const executedStepsList: StepExecutionResult[] = [];
-    let flowFailed = false;
-    let failedCat: string | null = null;
-    let failedErrMsg: string | null = null;
-    const runStart = Date.now();
-
-    for (let i = 0; i < activeSteps.length; i++) {
+    for (let rIdx = 0; rIdx < rowsToRun.length; rIdx++) {
       if (abortControllerRef.current) break;
 
-      const step = activeSteps[i];
-      setCurrentStepIndex(i);
-      setStepStatusMap(prev => ({ ...prev, [step.id]: 'running' }));
+      setCurrentDatasetRowIndex(rIdx);
+      const rowVariables = rowsToRun[rIdx];
 
-      try {
-        // recordHistory: false ensures single steps are NOT recorded as individual entries in reports
-        const response = await api.executeStep(step, runningCtx, undefined, false);
+      const initialMap: Record<string, 'pending' | 'running' | 'success' | 'failed'> = {};
+      activeSteps.forEach(s => {
+        initialMap[s.id] = 'pending';
+      });
+      setStepStatusMap(initialMap);
+
+      const resultsCollector: Record<string, StepExecutionResult> = {};
+      let runningCtx: ExecutionContext = {
+        cartId: null,
+        token: null,
+        orderNumber: null,
+        variables: { ...rowVariables },
+        logs: []
+      };
+      setCurrentContext(runningCtx);
+
+      const executedStepsList: StepExecutionResult[] = [];
+      let flowFailed = false;
+      let failedCat: string | null = null;
+      let failedErrMsg: string | null = null;
+      const rowStart = Date.now();
+
+      for (let i = 0; i < activeSteps.length; i++) {
         if (abortControllerRef.current) break;
 
-        resultsCollector[step.id] = response.stepResult;
-        executedStepsList.push(response.stepResult);
-        runningCtx = response.updatedContext;
-        setCurrentContext(runningCtx);
-        setStepResultsMap({ ...resultsCollector });
-
-        const failedTests = response.stepResult.testResults?.filter(t => !t.passed) || [];
-        const hasFailedTests = failedTests.length > 0;
-        const hasErrors = response.stepResult.errors && response.stepResult.errors.length > 0;
-        const isHttpError = response.stepResult.status >= 400 || response.stepResult.status === 0;
-
-        const isStepOk =
-          response.status === 'SUCCESS' &&
-          !hasErrors &&
-          !hasFailedTests &&
-          !isHttpError;
-
-        if (isStepOk) {
-          setStepStatusMap(prev => ({ ...prev, [step.id]: 'success' }));
-        } else {
-          flowFailed = true;
-          failedCat = step.category || 'Paso';
-          setFailedStepResult(response.stepResult);
-
-          if (hasFailedTests) {
-            setFailureType('TESTS_FAILED');
-            const testNames = failedTests.map(t => t.name).join(', ');
-            failedErrMsg = failedTests.length === 1
-              ? `No pasó la prueba: ${testNames}`
-              : `No pasaron ${failedTests.length} pruebas: ${testNames}`;
-          } else if (hasErrors) {
-            setFailureType('GRAPHQL_ERROR');
-            const errItem = response.stepResult.errors?.[0];
-            failedErrMsg =
-              (errItem && typeof errItem === 'object' && errItem.message ? errItem.message : null) ||
-              (typeof errItem === 'string' ? errItem : null) ||
-              'Error en respuesta GraphQL';
-          } else if (isHttpError) {
-            setFailureType('HTTP_ERROR');
-            failedErrMsg = `Error HTTP ${response.stepResult.status}: Respuesta fallida del servidor`;
-          } else {
-            setFailureType('GENERAL_ERROR');
-            failedErrMsg = 'Error al ejecutar el paso';
+        const baseStep = activeSteps[i];
+        // Inject current row variables into step overrides
+        const stepWithCsvVars: FlowStepConfig = {
+          ...baseStep,
+          overrideVariables: {
+            ...(baseStep.overrideVariables || {}),
+            ...rowVariables
           }
+        };
 
-          setStepStatusMap(prev => ({ ...prev, [step.id]: 'failed' }));
+        setCurrentStepIndex(i);
+        setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'running' }));
+
+        try {
+          const response = await api.executeStep(stepWithCsvVars, runningCtx, undefined, false);
+          if (abortControllerRef.current) break;
+
+          resultsCollector[baseStep.id] = response.stepResult;
+          executedStepsList.push(response.stepResult);
+          runningCtx = response.updatedContext;
+          setCurrentContext(runningCtx);
+          setStepResultsMap({ ...resultsCollector });
+
+          const failedTests = response.stepResult.testResults?.filter(t => !t.passed) || [];
+          const hasFailedTests = failedTests.length > 0;
+          const hasErrors = response.stepResult.errors && response.stepResult.errors.length > 0;
+          const isHttpError = response.stepResult.status >= 400 || response.stepResult.status === 0;
+
+          const isStepOk =
+            response.status === 'SUCCESS' &&
+            !hasErrors &&
+            !hasFailedTests &&
+            !isHttpError;
+
+          if (isStepOk) {
+            setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'success' }));
+          } else {
+            flowFailed = true;
+            failedCat = baseStep.category || 'Paso';
+            setFailedStepResult(response.stepResult);
+
+            if (hasFailedTests) {
+              setFailureType('TESTS_FAILED');
+              const testNames = failedTests.map(t => t.name).join(', ');
+              failedErrMsg = failedTests.length === 1
+                ? `No pasó la prueba: ${testNames}`
+                : `No pasaron ${failedTests.length} pruebas: ${testNames}`;
+            } else if (hasErrors) {
+              setFailureType('GRAPHQL_ERROR');
+              const errItem = response.stepResult.errors?.[0];
+              failedErrMsg =
+                (errItem && typeof errItem === 'object' && errItem.message ? errItem.message : null) ||
+                (typeof errItem === 'string' ? errItem : null) ||
+                'Error en respuesta GraphQL';
+            } else if (isHttpError) {
+              setFailureType('HTTP_ERROR');
+              failedErrMsg = `Error HTTP ${response.stepResult.status}: Respuesta fallida del servidor`;
+            } else {
+              setFailureType('GENERAL_ERROR');
+              failedErrMsg = 'Error al ejecutar el paso';
+            }
+
+            setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'failed' }));
+            setFailedError(failedErrMsg);
+            break;
+          }
+        } catch (err: any) {
+          if (abortControllerRef.current) break;
+          flowFailed = true;
+          failedCat = baseStep.category || 'Paso';
+          setFailureType('CONNECTION_ERROR');
+          failedErrMsg = err.message || 'Error de conexión con el servicio';
+          setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'failed' }));
           setFailedError(failedErrMsg);
           break;
         }
-      } catch (err: any) {
-        if (abortControllerRef.current) break;
-        flowFailed = true;
-        failedCat = step.category || 'Paso';
-        setFailureType('CONNECTION_ERROR');
-        failedErrMsg = err.message || 'Error de conexión con el servicio';
-        setStepStatusMap(prev => ({ ...prev, [step.id]: 'failed' }));
-        setFailedError(failedErrMsg);
-        break;
       }
+
+      const rowDuration = Date.now() - rowStart;
+      const hasFailedTests = executedStepsList.some(s => s.testResults?.some(t => !t.passed));
+      const rowStatus: 'SUCCESS' | 'FAILED' | 'TESTS_FAILED' = flowFailed
+        ? 'FAILED'
+        : hasFailedTests
+        ? 'TESTS_FAILED'
+        : 'SUCCESS';
+
+      consolidatedDatasetMetrics.push({
+        rowIndex: rIdx + 1,
+        rowVariables,
+        status: rowStatus,
+        orderNumber: runningCtx.orderNumber,
+        durationMs: rowDuration,
+        errorMessage: failedErrMsg || undefined
+      });
+      setDatasetResults([...consolidatedDatasetMetrics]);
+
+      // Record history entry for this iteration
+      try {
+        const iterSuffix = rowsToRun.length > 1 ? ` [Fila ${rIdx + 1}]` : '';
+        await api.recordFlowHistory({
+          flowName: (flowName || 'Flujo de Checkout') + iterSuffix,
+          status: rowStatus,
+          orderNumber: runningCtx.orderNumber,
+          totalTimeMs: rowDuration,
+          failedAtCategory: failedCat,
+          errorMessage: failedErrMsg || undefined,
+          steps: executedStepsList
+        });
+      } catch (recErr) {
+        console.error('Error saving flow history:', recErr);
+      }
+
+      finalCollector = resultsCollector;
+      finalRunningCtx = runningCtx;
+      overallFinalResp = {
+        status: rowStatus,
+        orderNumber: runningCtx.orderNumber,
+        totalTimeMs: rowDuration,
+        failedAtCategory: failedCat,
+        errorMessage: failedErrMsg || undefined,
+        steps: executedStepsList
+      };
+
+      // If aborted, stop
+      if (abortControllerRef.current) break;
     }
 
-    const duration = Date.now() - runStart;
     setIsRunning(false);
 
     if (abortControllerRef.current) return;
 
-    // Record the ONE consolidated flow execution report in database history
-    const hasFailedTests = executedStepsList.some(s => s.testResults?.some(t => !t.passed));
-    const flowFinalStatus: 'SUCCESS' | 'FAILED' | 'TESTS_FAILED' = flowFailed
-      ? 'FAILED'
-      : hasFailedTests
-      ? 'TESTS_FAILED'
-      : 'SUCCESS';
+    const anyFailed = consolidatedDatasetMetrics.some(m => m.status === 'FAILED');
+    const anyTestsFailed = consolidatedDatasetMetrics.some(m => m.status === 'TESTS_FAILED');
 
-    try {
-      await api.recordFlowHistory({
-        flowName: flowName || 'Flujo de Checkout',
-        status: flowFinalStatus,
-        orderNumber: runningCtx.orderNumber,
-        totalTimeMs: duration,
-        failedAtCategory: failedCat,
-        errorMessage: failedErrMsg || undefined,
-        steps: executedStepsList
-      });
-    } catch (recErr) {
-      console.error('Error saving consolidated flow history:', recErr);
-    }
-
-    if (flowFailed) {
+    if (anyFailed) {
       setFlowStatus('failed');
-      const finalResp: FlowExecutionResponse = {
-        status: 'FAILED',
-        orderNumber: runningCtx.orderNumber,
-        totalTimeMs: duration,
-        failedAtCategory: failedCat,
-        errorMessage: failedErrMsg || undefined,
-        steps: executedStepsList
-      };
-      onExecutionComplete(finalResp, resultsCollector, runningCtx);
     } else {
       setFlowStatus('success');
-      const finalResp: FlowExecutionResponse = {
-        status: flowFinalStatus,
-        orderNumber: runningCtx.orderNumber,
-        totalTimeMs: duration,
-        failedAtCategory: null,
-        steps: executedStepsList
-      };
-      onExecutionComplete(finalResp, resultsCollector, runningCtx);
+    }
+
+    if (overallFinalResp) {
+      const consolidatedStatus = anyFailed ? 'FAILED' : anyTestsFailed ? 'TESTS_FAILED' : 'SUCCESS';
+      onExecutionComplete(
+        { ...overallFinalResp, status: consolidatedStatus },
+        finalCollector,
+        finalRunningCtx
+      );
     }
   };
 
@@ -856,8 +918,46 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
             <div className="backdrop-blur-md bg-white/90 dark:bg-slate-950/60 border border-slate-200/90 dark:border-white/10 px-5 py-2.5 rounded-full flex items-center gap-3 text-xs text-slate-700 dark:text-slate-300 shadow-sm transition-colors">
               <div className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
               <span className="font-medium">
-                Goku subiendo la montaña: {activeSteps[currentStepIndex]?.category || variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || 'Petición en curso'}
+                {dataset && dataset.rows && dataset.rows.length > 1
+                  ? `[Fila ${currentDatasetRowIndex + 1}/${dataset.rows.length}] Goku subiendo la montaña: `
+                  : 'Goku subiendo la montaña: '}
+                {activeSteps[currentStepIndex]?.category || variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || 'Petición en curso'}
               </span>
+            </div>
+          )}
+
+          {/* DATASET EXECUTION RESULTS SUMMARY TABLE */}
+          {datasetResults.length > 1 && (
+            <div className="mt-3 w-full max-w-2xl bg-white/90 dark:bg-slate-900/90 backdrop-blur border border-slate-200 dark:border-slate-800 rounded-2xl p-3 shadow-lg">
+              <div className="flex items-center justify-between mb-2 px-1">
+                <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
+                  Resumen de Iteraciones CSV ({datasetResults.length}/{dataset?.rows.length || 0})
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  Éxitos: {datasetResults.filter(d => d.status === 'SUCCESS').length} • Fallos: {datasetResults.filter(d => d.status !== 'SUCCESS').length}
+                </span>
+              </div>
+              <div className="max-h-32 overflow-y-auto divide-y divide-slate-100 dark:divide-slate-800/80 text-xs font-mono">
+                {datasetResults.map(r => (
+                  <div key={r.rowIndex} className="py-1 px-1.5 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className={`w-2 h-2 rounded-full ${r.status === 'SUCCESS' ? 'bg-emerald-500' : 'bg-rose-500'}`} />
+                      <span className="font-bold">Fila #{r.rowIndex}</span>
+                      <span className="text-slate-400 font-sans text-[11px]">
+                        {Object.entries(r.rowVariables).slice(0, 3).map(([k, v]) => `${k}=${v}`).join(', ')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {r.orderNumber && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-bold">
+                          #{r.orderNumber}
+                        </span>
+                      )}
+                      <span className="text-slate-400 text-[11px]">{r.durationMs}ms</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

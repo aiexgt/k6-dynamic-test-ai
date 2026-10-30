@@ -17,7 +17,8 @@ import {
   Edit2,
   GripVertical,
   Lock,
-  History
+  History,
+  FileSpreadsheet
 } from 'lucide-react';
 import {
   Variant,
@@ -25,13 +26,15 @@ import {
   FlowStepConfig,
   FlowExecutionResponse,
   StepExecutionResult,
-  ExecutionContext
+  ExecutionContext,
+  CsvDataset
 } from '../../types';
 import { api } from '../../api';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { StepDetailModal } from './StepDetailModal';
 import { SaveFlowModal } from './SaveFlowModal';
 import { FlowExecutionModal } from './FlowExecutionModal';
+import { CsvDatasetModal } from './CsvDatasetModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { CodeEditor } from '../common/CodeEditor';
 import { VariantEditorView } from '../Variants/VariantEditorView';
@@ -49,6 +52,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
   const [savedFlows, setSavedFlows] = useState<SavedFlow[]>([]);
   const [selectedFlowId, setSelectedFlowId] = useState<string>('');
   const [steps, setSteps] = useState<FlowStepConfig[]>([]);
+  const [dataset, setDataset] = useState<CsvDataset | undefined>(undefined);
   const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [expandedVars, setExpandedVars] = useState<Record<string, boolean>>({});
   const [rawJsonOverrides, setRawJsonOverrides] = useState<Record<string, string>>({});
@@ -70,6 +74,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
+  const [isDatasetModalOpen, setIsDatasetModalOpen] = useState(false);
   const isExecutingAll = isExecutionModalOpen;
   const [copiedOrder, setCopiedOrder] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
@@ -80,18 +85,26 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
   const [dragEnabledIndex, setDragEnabledIndex] = useState<number | null>(null);
 
   // Unsaved changes calculation
-  const serializeSteps = (stepsList: FlowStepConfig[]) => {
-    return JSON.stringify(
-      stepsList.map(s => ({
+  const serializeFlowState = (stepsList: FlowStepConfig[], currentDataset?: CsvDataset) => {
+    return JSON.stringify({
+      steps: stepsList.map(s => ({
         category: s.category,
         variantId: s.variantId,
         skipped: !!s.skipped,
         overrideVariables: s.overrideVariables || {}
-      }))
-    );
+      })),
+      dataset: currentDataset
+        ? {
+            name: currentDataset.name,
+            headers: currentDataset.headers,
+            rows: currentDataset.rows
+          }
+        : null
+    });
   };
 
-  const hasUnsavedChanges = steps.length > 0 && serializeSteps(steps) !== savedSnapshot;
+  const hasUnsavedChanges =
+    steps.length > 0 && serializeFlowState(steps, dataset) !== savedSnapshot;
 
   // Browser reload / tab close warning if there are unsaved changes
   useEffect(() => {
@@ -207,6 +220,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
     );
 
     setSteps(initial);
+    setDataset(undefined);
     const overridesMap: Record<string, string> = {};
     initial.forEach(s => {
       if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
@@ -214,7 +228,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       }
     });
     setRawJsonOverrides(overridesMap);
-    setSavedSnapshot(serializeSteps(initial));
+    setSavedSnapshot(serializeFlowState(initial, undefined));
     resetRunState();
   };
 
@@ -236,6 +250,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
     });
 
     setSteps(normalized);
+    setDataset(flow.dataset);
     const overridesMap: Record<string, string> = {};
     normalized.forEach(s => {
       if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
@@ -243,7 +258,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       }
     });
     setRawJsonOverrides(overridesMap);
-    setSavedSnapshot(serializeSteps(normalized));
+    setSavedSnapshot(serializeFlowState(normalized, flow.dataset));
     onFlowChange?.(flow.id);
     resetRunState();
   };
@@ -263,10 +278,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
   const handleStartNewFlow = () => {
     setSelectedFlowId('');
     setSteps([]);
+    setDataset(undefined);
     resetRunState();
     setRawJsonOverrides({});
     setExpandedVars({});
-    setSavedSnapshot('[]');
+    setSavedSnapshot(serializeFlowState([], undefined));
     onFlowChange?.('');
   };
 
@@ -426,11 +442,12 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       const updated = await api.updateFlow(flowId, {
         name: name || existing?.name || 'Flujo de Checkout',
         description: description !== undefined ? description : existing?.description,
-        steps
+        steps,
+        dataset
       });
       setSavedFlows(prev => prev.map(f => (f.id === updated.id ? updated : f)));
       setSelectedFlowId(updated.id);
-      setSavedSnapshot(serializeSteps(steps));
+      setSavedSnapshot(serializeFlowState(steps, dataset));
       onFlowChange?.(updated.id);
       toast(`¡Flujo "${updated.name}" guardado con éxito!`, 'success');
     } catch (err: any) {
@@ -445,10 +462,10 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       return;
     }
     try {
-      const created = await api.createFlow({ name, description, steps });
+      const created = await api.createFlow({ name, description, steps, dataset });
       setSavedFlows(prev => [...prev, created]);
       setSelectedFlowId(created.id);
-      setSavedSnapshot(serializeSteps(steps));
+      setSavedSnapshot(serializeFlowState(steps, dataset));
       onFlowChange?.(created.id);
       toast(`¡Flujo "${created.name}" guardado como nuevo!`, 'success');
     } catch (err: any) {
@@ -669,6 +686,24 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
               <span>Versiones</span>
             </button>
           )}
+
+          {/* Botón Matriz CSV / Dataset */}
+          <button
+            onClick={() => setIsDatasetModalOpen(true)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+              dataset && dataset.rows && dataset.rows.length > 0
+                ? 'bg-orange-500/10 border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold'
+                : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+            }`}
+            title="Configurar matriz de datos o subir archivo CSV"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-orange-500" />
+            <span>
+              {dataset && dataset.rows && dataset.rows.length > 0
+                ? `CSV (${dataset.rows.length} Filas)`
+                : 'Matriz CSV'}
+            </span>
+          </button>
 
           <button
             onClick={resetRunState}
@@ -1087,6 +1122,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
         flowName={activeFlow?.name || 'Pipeline de Checkout'}
         steps={steps}
         variants={variants}
+        dataset={dataset}
         initialContext={executionContext}
         onExecutionComplete={(result, resultMap, finalContext) => {
           setExecutionResult(result);
@@ -1111,10 +1147,25 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
           onRollbackSuccess={(restoredFlow: SavedFlow) => {
             setSavedFlows(prev => prev.map(f => (f.id === restoredFlow.id ? restoredFlow : f)));
             setSteps(restoredFlow.steps || []);
-            setSavedSnapshot(JSON.stringify(restoredFlow.steps || []));
+            setDataset(restoredFlow.dataset);
+            setSavedSnapshot(serializeFlowState(restoredFlow.steps || [], restoredFlow.dataset));
           }}
         />
       )}
+
+      <CsvDatasetModal
+        isOpen={isDatasetModalOpen}
+        onClose={() => setIsDatasetModalOpen(false)}
+        dataset={dataset}
+        onApplyDataset={newDataset => {
+          setDataset(newDataset);
+          if (newDataset && newDataset.rows.length > 0) {
+            toast(`Dataset "${newDataset.name}" aplicado (${newDataset.rows.length} filas)`, 'success');
+          } else {
+            toast('Dataset removido del flujo', 'info');
+          }
+        }}
+      />
     </div>
   );
 };

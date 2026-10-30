@@ -128,11 +128,19 @@ export interface FlowStepConfig {
   customValidations?: CustomValidation[];
 }
 
+export interface CsvDataset {
+  name?: string;
+  headers: string[];
+  rows: Record<string, any>[];
+  rawCsv?: string;
+}
+
 export interface SavedFlow {
   id: string;
   name: string;
   description?: string;
   steps: FlowStepConfig[];
+  dataset?: CsvDataset;
   isLocked?: boolean;
   lockedBy?: string;
   lockedByName?: string;
