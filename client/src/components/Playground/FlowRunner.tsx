@@ -27,7 +27,8 @@ import {
   FlowExecutionResponse,
   StepExecutionResult,
   ExecutionContext,
-  CsvDataset
+  CsvDataset,
+  Environment
 } from '../../types';
 import { api } from '../../api';
 import { SearchableSelect } from '../common/SearchableSelect';
@@ -38,15 +39,50 @@ import { CsvDatasetModal } from './CsvDatasetModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { CodeEditor } from '../common/CodeEditor';
 import { VariantEditorView } from '../Variants/VariantEditorView';
+import { EnvironmentSecurityModal } from '../common/EnvironmentSecurityModal';
 import { useFeedback } from '../../context/FeedbackContext';
 
 interface FlowRunnerProps {
   initialFlow?: SavedFlow | null;
   onFlowChange?: (flowId: string) => void;
+  environments?: Environment[];
+  activeEnvironmentId?: string;
 }
 
-export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChange }) => {
+export const FlowRunner: React.FC<FlowRunnerProps> = ({
+  initialFlow,
+  onFlowChange,
+  environments: propEnvironments,
+  activeEnvironmentId: propActiveEnvId
+}) => {
   const { toast } = useFeedback();
+  const [internalEnvs, setInternalEnvs] = useState<Environment[]>([]);
+  const [internalActiveEnvId, setInternalActiveEnvId] = useState<string>('');
+
+  useEffect(() => {
+    if (!propEnvironments || propEnvironments.length === 0) {
+      api.getEnvironments().then(setInternalEnvs).catch(console.error);
+    }
+  }, [propEnvironments]);
+
+  useEffect(() => {
+    if (!propActiveEnvId) {
+      api.getSettings().then(s => setInternalActiveEnvId(s.activeEnvironmentId || '')).catch(console.error);
+    }
+  }, [propActiveEnvId]);
+
+  const environments = propEnvironments && propEnvironments.length > 0 ? propEnvironments : internalEnvs;
+  const activeEnvId = propActiveEnvId || internalActiveEnvId;
+
+  const [securityModalState, setSecurityModalState] = useState<{
+    isOpen: boolean;
+    mode: 'FLOW' | 'STEP';
+    environment: Environment;
+    flowName?: string;
+    stepName?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const [variants, setVariants] = useState<Variant[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [savedFlows, setSavedFlows] = useState<SavedFlow[]>([]);
@@ -521,6 +557,19 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       toast('Configura al menos un paso activo con variante antes de ejecutar', 'info');
       return;
     }
+
+    const currentEnv = environments.find(e => e.id === activeEnvId) || environments[0];
+    if (currentEnv?.isProtected) {
+      setSecurityModalState({
+        isOpen: true,
+        mode: 'FLOW',
+        environment: currentEnv,
+        flowName: activeFlow?.name || 'Pipeline de Checkout',
+        onConfirm: () => setIsExecutionModalOpen(true)
+      });
+      return;
+    }
+
     setIsExecutionModalOpen(true);
   };
 
@@ -534,9 +583,8 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
     toast('Paso abortado por el usuario', 'info');
   };
 
-  // Single Step Execution
-  const handleExecuteSingleStep = async (step: FlowStepConfig) => {
-    if (step.skipped || !step.variantId) return;
+  // Single Step Execution Worker
+  const doExecuteSingleStep = async (step: FlowStepConfig) => {
     setRunningStepId(step.id);
     const controller = new AbortController();
     stepAbortControllerRef.current = controller;
@@ -574,6 +622,28 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
       setRunningStepId(null);
       stepAbortControllerRef.current = null;
     }
+  };
+
+  // Single Step Execution Trigger with Protection Check
+  const handleExecuteSingleStep = (step: FlowStepConfig) => {
+    if (step.skipped || !step.variantId) return;
+
+    const selectedVar = variants.find(v => v.id === step.variantId);
+    const targetEnvId = step.environmentId || selectedVar?.environmentId || activeEnvId;
+    const targetEnv = environments.find(e => e.id === targetEnvId) || environments[0];
+
+    if (targetEnv?.isProtected) {
+      setSecurityModalState({
+        isOpen: true,
+        mode: 'STEP',
+        environment: targetEnv,
+        stepName: selectedVar?.name || step.category,
+        onConfirm: () => doExecuteSingleStep(step)
+      });
+      return;
+    }
+
+    doExecuteSingleStep(step);
   };
 
   // Step-by-step Next execution
@@ -1149,6 +1219,18 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({ initialFlow, onFlowChang
           })
         )}
       </div>
+
+      {securityModalState && (
+        <EnvironmentSecurityModal
+          isOpen={securityModalState.isOpen}
+          mode={securityModalState.mode}
+          environment={securityModalState.environment}
+          flowName={securityModalState.flowName}
+          stepName={securityModalState.stepName}
+          onConfirm={securityModalState.onConfirm}
+          onClose={() => setSecurityModalState(null)}
+        />
+      )}
 
       <StepDetailModal step={selectedStepDetail} onClose={() => setSelectedStepDetail(null)} />
       <SaveFlowModal

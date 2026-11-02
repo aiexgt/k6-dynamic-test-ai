@@ -15,20 +15,53 @@ import {
   User,
   History
 } from 'lucide-react';
-import { SavedFlow, Variant, StepExecutionResult } from '../../types';
+import { SavedFlow, Variant, StepExecutionResult, Environment } from '../../types';
 import { api } from '../../api';
 import { useFeedback } from '../../context/FeedbackContext';
 import { FlowExecutionModal } from '../Playground/FlowExecutionModal';
 import { StepDetailModal } from '../Playground/StepDetailModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
+import { EnvironmentSecurityModal } from '../common/EnvironmentSecurityModal';
 import { downloadJson, sanitizeFilename } from '../../utils/fileTransfer';
 
 interface SavedFlowsListProps {
   onLoadFlowInPlayground: (flow: SavedFlow) => void;
+  environments?: Environment[];
+  activeEnvironmentId?: string;
 }
 
-export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({ onLoadFlowInPlayground }) => {
+export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
+  onLoadFlowInPlayground,
+  environments: propEnvironments,
+  activeEnvironmentId: propActiveEnvId
+}) => {
   const { confirm, prompt, toast } = useFeedback();
+  const [internalEnvs, setInternalEnvs] = useState<Environment[]>([]);
+  const [internalActiveEnvId, setInternalActiveEnvId] = useState<string>('');
+
+  useEffect(() => {
+    if (!propEnvironments || propEnvironments.length === 0) {
+      api.getEnvironments().then(setInternalEnvs).catch(console.error);
+    }
+  }, [propEnvironments]);
+
+  useEffect(() => {
+    if (!propActiveEnvId) {
+      api.getSettings().then(s => setInternalActiveEnvId(s.activeEnvironmentId || '')).catch(console.error);
+    }
+  }, [propActiveEnvId]);
+
+  const environments = propEnvironments && propEnvironments.length > 0 ? propEnvironments : internalEnvs;
+  const activeEnvironmentId = propActiveEnvId || internalActiveEnvId;
+
+  const [securityModalState, setSecurityModalState] = useState<{
+    isOpen: boolean;
+    mode: 'FLOW' | 'STEP';
+    environment: Environment;
+    flowName?: string;
+    onConfirm: () => void;
+  } | null>(null);
+
   const [flows, setFlows] = useState<SavedFlow[]>([]);
   const [variants, setVariants] = useState<Variant[]>([]);
   const [executingFlow, setExecutingFlow] = useState<SavedFlow | null>(null);
@@ -168,6 +201,17 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({ onLoadFlowInPlay
   };
 
   const handleQuickRun = (flow: SavedFlow) => {
+    const currentEnv = environments.find(e => e.id === activeEnvironmentId) || environments[0];
+    if (currentEnv?.isProtected) {
+      setSecurityModalState({
+        isOpen: true,
+        mode: 'FLOW',
+        environment: currentEnv,
+        flowName: flow.name,
+        onConfirm: () => setExecutingFlow(flow)
+      });
+      return;
+    }
     setExecutingFlow(flow);
   };
 
@@ -435,6 +479,17 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({ onLoadFlowInPlay
             );
           })}
         </div>
+      )}
+
+      {securityModalState && (
+        <EnvironmentSecurityModal
+          isOpen={securityModalState.isOpen}
+          mode={securityModalState.mode}
+          environment={securityModalState.environment}
+          flowName={securityModalState.flowName}
+          onConfirm={securityModalState.onConfirm}
+          onClose={() => setSecurityModalState(null)}
+        />
       )}
 
       {/* Mountain Expedition Execution Modal */}

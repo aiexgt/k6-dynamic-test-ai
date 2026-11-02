@@ -9,6 +9,7 @@ import {
   Moon,
   Server,
   ShieldCheck,
+  ShieldAlert,
   Settings,
   Trash2
 } from 'lucide-react';
@@ -46,10 +47,11 @@ export const Navbar: React.FC<NavbarProps> = ({
   onOpenTrash,
   trashCount = 0
 }) => {
+  const activeEnv = environments.find(e => e.id === activeEnvironmentId);
   const envOptions = environments.map(e => ({
     value: e.id,
-    label: e.name,
-    sublabel: e.magentoUrl
+    label: `${e.isProtected ? '🛡️ ' : ''}${e.name}`,
+    sublabel: `${e.isProtected ? '[Protegido] ' : ''}${e.magentoUrl}`
   }));
 
   const userInitials = currentUser?.name
@@ -166,13 +168,21 @@ export const Navbar: React.FC<NavbarProps> = ({
         {/* Right Actions: Environment Selector with Search, Trash, User Profile & Theme */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {/* Environment Searchable Select */}
-          <div className="w-44 sm:w-52">
+          <div className="w-44 sm:w-52 relative">
             <SearchableSelect
               options={envOptions}
               value={activeEnvironmentId || null}
               onChange={onSelectEnvironment}
               placeholder="Seleccionar Entorno"
             />
+            {activeEnv?.isProtected && (
+              <span
+                className="absolute -top-1 -left-1 p-0.5 rounded-full bg-amber-500 text-white shadow-xs"
+                title={`Entorno "${activeEnv.name}" protegido`}
+              >
+                <ShieldAlert className="w-2.5 h-2.5" />
+              </span>
+            )}
           </div>
 
           {/* Trash Bin Button */}

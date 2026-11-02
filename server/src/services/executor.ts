@@ -642,12 +642,9 @@ export class FlowExecutionService {
 
       if (newlyExtractedCartId) {
         context.cartId = newlyExtractedCartId;
-        extractedVariables.CartId = newlyExtractedCartId;
         extractedVariables.cartId = newlyExtractedCartId;
-        context.variables.CartId = newlyExtractedCartId;
         context.variables.cartId = newlyExtractedCartId;
         if (envIdToUpdate) {
-          Database.updateEnvironmentVariable(envIdToUpdate, 'CartId', newlyExtractedCartId);
           Database.updateEnvironmentVariable(envIdToUpdate, 'cartId', newlyExtractedCartId);
         }
       }
@@ -663,12 +660,9 @@ export class FlowExecutionService {
       if (newlyExtractedToken) {
         context.token = newlyExtractedToken;
         extractedVariables.customerToken = newlyExtractedToken;
-        extractedVariables.token = newlyExtractedToken;
         context.variables.customerToken = newlyExtractedToken;
-        context.variables.token = newlyExtractedToken;
         if (envIdToUpdate) {
           Database.updateEnvironmentVariable(envIdToUpdate, 'customerToken', newlyExtractedToken);
-          Database.updateEnvironmentVariable(envIdToUpdate, 'token', newlyExtractedToken);
         }
       }
 

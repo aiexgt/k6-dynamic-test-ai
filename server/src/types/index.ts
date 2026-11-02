@@ -73,6 +73,8 @@ export interface Environment {
   customHeaders: Record<string, any>;
   variables?: Record<string, string>;
   useMockSimulator: boolean;
+  isProtected?: boolean;
+  securityCode?: string;
   createdAt?: string;
   updatedAt?: string;
 }

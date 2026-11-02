@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, CopyPlus, Search, X } from 'lucide-react';
+import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, CopyPlus, Search, X, ShieldAlert } from 'lucide-react';
 import { Environment } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 import { api } from '../../api';
@@ -46,15 +46,17 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       magentoUrl: 'https://app.kosmos.test/graphql',
       magentoRestUrl: 'https://app.kosmos.test/rest/V1',
       useMockSimulator: false,
+      isProtected: false,
+      securityCode: '',
       customHeaders: { 'Content-Type': 'application/json' },
-      variables: { CartId: '', sku: 'MD2', quantity: '1' }
+      variables: { cartId: '', sku: 'MD2', quantity: '1' }
     });
     setHeaderRows([
       { id: '1', key: 'Content-Type', value: 'application/json' },
       { id: '2', key: 'AuthToken', value: '' }
     ]);
     setVariableRows([
-      { id: 'v1', key: 'CartId', value: '' },
+      { id: 'v1', key: 'cartId', value: '' },
       { id: 'v2', key: 'sku', value: 'MD2' },
       { id: 'v3', key: 'quantity', value: '1' },
       { id: 'v4', key: 'customerToken', value: '' }
@@ -63,7 +65,11 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   };
 
   const handleStartEdit = (env: Environment) => {
-    setEditingEnv(env);
+    setEditingEnv({
+      ...env,
+      isProtected: !!env.isProtected,
+      securityCode: env.securityCode || ''
+    });
 
     // Headers
     const hRows = Object.entries(env.customHeaders || {}).map(([k, v], idx) => ({
@@ -79,7 +85,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       key: k,
       value: String(v)
     }));
-    setVariableRows(vRows.length > 0 ? vRows : [{ id: 'v1', key: 'CartId', value: '' }]);
+    setVariableRows(vRows.length > 0 ? vRows : [{ id: 'v1', key: 'cartId', value: '' }]);
 
     setIsEditing(true);
   };
@@ -146,6 +152,8 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       name: editingEnv.name.trim(),
       magentoUrl: editingEnv.magentoUrl.trim(),
       magentoRestUrl: editingEnv.magentoRestUrl?.trim() || '',
+      isProtected: !!editingEnv.isProtected,
+      securityCode: editingEnv.securityCode?.trim() || '',
       customHeaders: parsedHeaders,
       variables: parsedVars
     });
@@ -299,6 +307,48 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
                 Usar Simulador Mock interno (para desarrollo sin backend Magento activo)
               </label>
             </div>
+
+            {/* Protección de Entorno (Producción / Staging) */}
+            <div className="pt-3 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <input
+                  type="checkbox"
+                  id="isProtected"
+                  checked={!!editingEnv.isProtected}
+                  onChange={e => setEditingEnv({ ...editingEnv, isProtected: e.target.checked })}
+                  className="mt-0.5 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                />
+                <div className="space-y-0.5">
+                  <label htmlFor="isProtected" className="text-xs font-bold text-slate-800 dark:text-slate-200 select-none flex items-center gap-1.5 cursor-pointer">
+                    <ShieldAlert className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Proteger entorno contra ejecuciones accidentales (Producción / Staging)</span>
+                  </label>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                    Al intentar ejecutar un flujo completo en este ambiente, solicitará un código de seguridad o el nombre del entorno. Al ejecutar una variante individual, solicitará confirmar (Aceptar / Cancelar).
+                  </p>
+                </div>
+              </div>
+
+              {editingEnv.isProtected && (
+                <div className="ml-6 pl-3 border-l-2 border-amber-500/40 space-y-2 pt-1">
+                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                    Código de Seguridad (Opcional)
+                  </label>
+                  <input
+                    type="text"
+                    value={editingEnv.securityCode || ''}
+                    onChange={e => setEditingEnv({ ...editingEnv, securityCode: e.target.value })}
+                    placeholder={`Dejar vacío para requerir el nombre: "${editingEnv.name || 'Nombre del entorno'}"`}
+                    className="w-full font-mono text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                  />
+                  <p className="text-[11px] text-slate-400">
+                    {editingEnv.securityCode?.trim()
+                      ? `Para ejecutar un flujo completo, el usuario deberá ingresar este código: "${editingEnv.securityCode.trim()}".`
+                      : `Al dejarlo vacío, el usuario deberá escribir exactamente "${editingEnv.name || 'Nombre del entorno'}" para confirmar.`}
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Variables de Entorno (Requirement 2) */}
@@ -324,10 +374,10 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleAddVariableRow('CartId', '')}
+                  onClick={() => handleAddVariableRow('cartId', '')}
                   className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
                 >
-                  + CartId
+                  + cartId
                 </button>
                 <button
                   type="button"
@@ -586,6 +636,15 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
                     {env.useMockSimulator && (
                       <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
                         Mock
+                      </span>
+                    )}
+                    {env.isProtected && (
+                      <span
+                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                        title={env.securityCode ? 'Protegido con código PIN' : `Protegido con nombre: "${env.name}"`}
+                      >
+                        <ShieldAlert className="w-3 h-3 text-amber-500" />
+                        <span>Protegido</span>
                       </span>
                     )}
                   </div>

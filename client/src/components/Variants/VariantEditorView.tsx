@@ -49,7 +49,9 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
   const [body, setBody] = useState<string>(initialVariant?.body || '');
   const [query, setQuery] = useState('');
   const [defaultVariablesStr, setDefaultVariablesStr] = useState('{}');
-  const [contextOutputsStr, setContextOutputsStr] = useState('cartId');
+  const [contextOutputsStr, setContextOutputsStr] = useState(
+    initialVariant?.contextOutputs ? initialVariant.contextOutputs.join(', ') : ''
+  );
   const [isVirtualOnly, setIsVirtualOnly] = useState(false);
   const [jsonError, setJsonError] = useState<string | null>(null);
 
@@ -179,9 +181,9 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       setCategory(defaultCategory || categories[0] || 'Crear Carrito');
       setIsCreatingNewCat(false);
       setDescription('');
-      setQuery(`mutation MyMutation($cartId: String!) {\n  // Escribe tu mutación GraphQL aquí\n}`);
+      setQuery('');
       setDefaultVariablesStr('{}');
-      setContextOutputsStr('cartId');
+      setContextOutputsStr('');
       setIsVirtualOnly(false);
       setUseCustomEnvironment(false);
       setSelectedEnvironmentId(environments[0]?.id || '');
@@ -271,6 +273,14 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
     if (e) e.preventDefault();
     if (!name.trim()) {
       toast('El nombre de la variante es obligatorio', 'error');
+      return;
+    }
+    if (apiType === 'REST' && !endpoint.trim()) {
+      toast('El endpoint REST es obligatorio', 'error');
+      return;
+    }
+    if (apiType === 'GRAPHQL' && !query.trim()) {
+      toast('La query GraphQL es obligatoria', 'error');
       return;
     }
 

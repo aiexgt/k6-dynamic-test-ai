@@ -94,7 +94,7 @@ const DEFAULT_ENVIRONMENTS: Environment[] = [
       'X-Client-Type': '1'
     },
     variables: {
-      CartId: '',
+      cartId: '',
       sku: 'MD2',
       quantity: '1',
       customerToken: ''
@@ -112,7 +112,7 @@ const DEFAULT_ENVIRONMENTS: Environment[] = [
       'Content-Type': 'application/json'
     },
     variables: {
-      CartId: 'cart-mock-123',
+      cartId: 'cart-mock-123',
       sku: 'MOCK-SKU-1',
       quantity: '1'
     },
@@ -129,7 +129,7 @@ const DEFAULT_ENVIRONMENTS: Environment[] = [
       'Content-Type': 'application/json'
     },
     variables: {
-      CartId: '',
+      cartId: '',
       sku: 'MD2',
       quantity: '1'
     },
@@ -156,6 +156,50 @@ function maskDbUrl(rawUrl?: string): string {
   } catch {
     return 'URL configurada';
   }
+}
+
+export function sanitizeEnvironmentVariables(vars: Record<string, any>): Record<string, any> {
+  if (!vars || typeof vars !== 'object') return {};
+  const cleaned: Record<string, any> = {};
+  for (const [k, v] of Object.entries(vars)) {
+    cleaned[k] = v;
+  }
+  // Harmonize cartId only if any variant exists
+  const hasCart = 'cartId' in cleaned || 'CartId' in cleaned || 'cart_id' in cleaned;
+  if (hasCart) {
+    const cartVal = (cleaned.cartId !== undefined && cleaned.cartId !== '')
+      ? cleaned.cartId
+      : ((cleaned.CartId !== undefined && cleaned.CartId !== '') ? cleaned.CartId : (cleaned.cart_id || ''));
+    cleaned.cartId = cartVal;
+    delete cleaned.CartId;
+    delete cleaned.cart_id;
+  }
+
+  // Harmonize customerToken only if any variant exists
+  const hasToken = 'customerToken' in cleaned || 'token' in cleaned || 'customer_token' in cleaned || 'AuthToken' in cleaned;
+  if (hasToken) {
+    const tokenVal = (cleaned.customerToken !== undefined && cleaned.customerToken !== '')
+      ? cleaned.customerToken
+      : ((cleaned.token !== undefined && cleaned.token !== '')
+          ? cleaned.token
+          : ((cleaned.customer_token !== undefined && cleaned.customer_token !== '') ? cleaned.customer_token : (cleaned.AuthToken || '')));
+    cleaned.customerToken = tokenVal;
+    delete cleaned.token;
+    delete cleaned.customer_token;
+    delete cleaned.AuthToken;
+  }
+
+  // Harmonize orderNumber only if any variant exists
+  const hasOrder = 'orderNumber' in cleaned || 'order_number' in cleaned;
+  if (hasOrder) {
+    const orderVal = (cleaned.orderNumber !== undefined && cleaned.orderNumber !== '')
+      ? cleaned.orderNumber
+      : (cleaned.order_number || '');
+    cleaned.orderNumber = orderVal;
+    delete cleaned.order_number;
+  }
+
+  return cleaned;
 }
 
 export class Database {
@@ -429,6 +473,8 @@ export class Database {
 
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS variables JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS magento_rest_url TEXT;
+      ALTER TABLE environments ADD COLUMN IF NOT EXISTS is_protected BOOLEAN DEFAULT FALSE;
+      ALTER TABLE environments ADD COLUMN IF NOT EXISTS security_code TEXT DEFAULT '';
 
       CREATE TABLE IF NOT EXISTS settings (
         key VARCHAR(100) PRIMARY KEY,
@@ -599,8 +645,10 @@ export class Database {
             magentoRestUrl: r.magento_rest_url || '',
             storeCode: r.store_code,
             customHeaders: r.custom_headers,
-            variables: r.variables || {},
+            variables: sanitizeEnvironmentVariables(r.variables || {}),
             useMockSimulator: r.use_mock_simulator,
+            isProtected: !!r.is_protected,
+            securityCode: r.security_code || '',
             createdAt: r.created_at?.toISOString?.() || r.created_at,
             updatedAt: r.updated_at?.toISOString?.() || r.updated_at
           }));
@@ -1092,12 +1140,13 @@ export class Database {
     const envs = this.getEnvironments();
     const index = envs.findIndex(e => e.id === env.id);
     const now = new Date().toISOString();
+    const sanitizedVars = sanitizeEnvironmentVariables(env.variables || {});
     let finalEnv: Environment;
     if (index >= 0) {
-      finalEnv = { ...env, updatedAt: now };
+      finalEnv = { ...env, variables: sanitizedVars, updatedAt: now };
       envs[index] = finalEnv;
     } else {
-      finalEnv = { ...env, createdAt: now, updatedAt: now };
+      finalEnv = { ...env, variables: sanitizedVars, createdAt: now, updatedAt: now };
       envs.push(finalEnv);
     }
 
@@ -1109,7 +1158,7 @@ export class Database {
       if (otherEnv.id === finalEnv.id) continue;
       let modifiedOther = false;
 
-      const otherVars = { ...(otherEnv.variables || {}) };
+      const otherVars = sanitizeEnvironmentVariables(otherEnv.variables || {});
       for (const vk of newVarKeys) {
         if (!(vk in otherVars)) {
           otherVars[vk] = '';
@@ -1143,10 +1192,10 @@ export class Database {
 
     if (localPgPool && isLocalPgConnected) {
       localPgPool.query(
-        `INSERT INTO environments (id, name, magento_url, magento_rest_url, store_code, custom_headers, variables, use_mock_simulator, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        `INSERT INTO environments (id, name, magento_url, magento_rest_url, store_code, custom_headers, variables, use_mock_simulator, is_protected, security_code, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
          ON CONFLICT (id) DO UPDATE SET
-           name = $2, magento_url = $3, magento_rest_url = $4, store_code = $5, custom_headers = $6, variables = $7, use_mock_simulator = $8, updated_at = $10`,
+           name = $2, magento_url = $3, magento_rest_url = $4, store_code = $5, custom_headers = $6, variables = $7, use_mock_simulator = $8, is_protected = $9, security_code = $10, updated_at = $12`,
         [
           finalEnv.id,
           finalEnv.name,
@@ -1156,6 +1205,8 @@ export class Database {
           JSON.stringify(finalEnv.customHeaders || {}),
           JSON.stringify(finalEnv.variables || {}),
           !!finalEnv.useMockSimulator,
+          !!finalEnv.isProtected,
+          finalEnv.securityCode || '',
           finalEnv.createdAt,
           finalEnv.updatedAt
         ]
@@ -1181,23 +1232,19 @@ export class Database {
   static updateEnvironmentVariable(envId: string, varKey: string, varValue: string): void {
     const env = this.getEnvironmentById(envId);
     if (!env) return;
-    const currentVars = { ...(env.variables || {}) };
-    currentVars[varKey] = varValue;
+    const currentVars = sanitizeEnvironmentVariables(env.variables || {});
 
     const lowerKey = varKey.toLowerCase().replace(/[-_]/g, '');
+    let targetKey = varKey;
     if (lowerKey === 'cartid') {
-      currentVars['CartId'] = varValue;
-      currentVars['cartId'] = varValue;
-      currentVars['cart_id'] = varValue;
+      targetKey = 'cartId';
     } else if (lowerKey === 'customertoken' || lowerKey === 'token' || lowerKey === 'authtoken') {
-      currentVars['customerToken'] = varValue;
-      currentVars['token'] = varValue;
-      currentVars['customer_token'] = varValue;
-      currentVars['AuthToken'] = varValue;
+      targetKey = 'customerToken';
     } else if (lowerKey === 'ordernumber') {
-      currentVars['orderNumber'] = varValue;
-      currentVars['order_number'] = varValue;
+      targetKey = 'orderNumber';
     }
+
+    currentVars[targetKey] = varValue;
 
     this.upsertEnvironment({ ...env, variables: currentVars });
     if (this.settingsCache && this.settingsCache.activeEnvironmentId === envId) {

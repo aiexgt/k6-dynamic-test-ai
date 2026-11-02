@@ -297,10 +297,16 @@ export function App() {
           <FlowRunner
             initialFlow={loadedFlow}
             onFlowChange={handleFlowUrlUpdate}
+            environments={environments}
+            activeEnvironmentId={settings?.activeEnvironmentId}
           />
         )}
         {activeTab === 'flows' && (
-          <SavedFlowsList onLoadFlowInPlayground={handleLoadFlowInPlayground} />
+          <SavedFlowsList
+            onLoadFlowInPlayground={handleLoadFlowInPlayground}
+            environments={environments}
+            activeEnvironmentId={settings?.activeEnvironmentId}
+          />
         )}
         {activeTab === 'variants' && (
           <VariantCatalog

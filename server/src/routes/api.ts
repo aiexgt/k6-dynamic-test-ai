@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Database } from '../storage/db';
 import { FlowExecutionService } from '../services/executor';
 import { SchemaService } from '../services/schemaService';
-import { Variant, SavedFlow, FlowStepConfig, EnvironmentSettings, Environment, GlobalTestConfig } from '../types';
+import { Variant, SavedFlow, FlowStepConfig, EnvironmentSettings, Environment, GlobalTestConfig, ApiType } from '../types';
 
 export const apiRouter = Router();
 
@@ -97,19 +97,34 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     name,
     category,
     stage,
+    description,
+    apiType,
+    method,
+    endpoint,
+    body,
     query,
+    environmentId,
     defaultVariables,
     contextOutputs,
     contextMapping,
     customHeaders,
     environmentOverrides,
     customValidations,
-    isVirtualOnly,
-    description
+    isVirtualOnly
   } = req.body;
 
-  if (!name || (!category && !stage) || !query) {
-    return res.status(400).json({ error: 'name, category and query are required' });
+  const resolvedApiType: ApiType = apiType === 'REST' ? 'REST' : 'GRAPHQL';
+
+  if (!name || (!category && !stage)) {
+    return res.status(400).json({ error: 'name and category are required' });
+  }
+
+  if (resolvedApiType === 'GRAPHQL' && !query) {
+    return res.status(400).json({ error: 'query is required for GraphQL variants' });
+  }
+
+  if (resolvedApiType === 'REST' && !endpoint) {
+    return res.status(400).json({ error: 'endpoint is required for REST variants' });
   }
 
   const assignedCategory = category || stage || 'General';
@@ -119,7 +134,12 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     category: assignedCategory,
     stage: stage || undefined,
     description: description || '',
-    query,
+    apiType: resolvedApiType,
+    method: method || (resolvedApiType === 'REST' ? 'POST' : undefined),
+    endpoint: endpoint || '',
+    body: body || '',
+    query: query || '',
+    environmentId: environmentId || null,
     defaultVariables: defaultVariables || {},
     contextOutputs: Array.isArray(contextOutputs) ? contextOutputs : [],
     contextMapping: contextMapping || {},
@@ -149,6 +169,11 @@ apiRouter.put('/variants/:id', (req: Request, res: Response) => {
     ...existing,
     ...req.body,
     category: req.body.category || existing.category || existing.stage || 'General',
+    apiType: req.body.apiType || existing.apiType || 'GRAPHQL',
+    method: req.body.method !== undefined ? req.body.method : existing.method,
+    endpoint: req.body.endpoint !== undefined ? req.body.endpoint : existing.endpoint,
+    body: req.body.body !== undefined ? req.body.body : existing.body,
+    environmentId: req.body.environmentId !== undefined ? req.body.environmentId : existing.environmentId,
     customHeaders: req.body.customHeaders !== undefined ? req.body.customHeaders : existing.customHeaders,
     environmentOverrides: req.body.environmentOverrides !== undefined ? req.body.environmentOverrides : existing.environmentOverrides,
     customValidations: Array.isArray(req.body.customValidations) ? req.body.customValidations : existing.customValidations,
@@ -654,14 +679,14 @@ apiRouter.post('/import', (req: Request, res: Response) => {
     // 2. Variants
     const variantsList: Variant[] = Array.isArray(payload.variants)
       ? payload.variants
-      : Array.isArray(payload) && payload[0]?.query
+      : Array.isArray(payload) && (payload[0]?.query || payload[0]?.endpoint)
       ? payload
-      : payload.query
+      : (payload.query || payload.endpoint)
       ? [payload]
       : [];
 
     for (const v of variantsList) {
-      if (v && v.name && v.query) {
+      if (v && v.name && (v.query || v.endpoint || v.apiType === 'REST')) {
         const variantId = v.id || ('var-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6));
         Database.upsertVariant({
           ...v,

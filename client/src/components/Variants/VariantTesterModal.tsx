@@ -33,6 +33,7 @@ import {
   Environment
 } from '../../types';
 import { api } from '../../api';
+import { EnvironmentSecurityModal } from '../common/EnvironmentSecurityModal';
 import { CodeEditor, formatGraphQL } from '../common/CodeEditor';
 import { TypedSchemaJsonViewer } from '../common/TypedSchemaJsonViewer';
 import { useFeedback } from '../../context/FeedbackContext';
@@ -54,7 +55,9 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
   const { toast } = useFeedback();
 
   // Request State
-  const [query, setQuery] = useState<string>(variant.query || '');
+  const [query, setQuery] = useState<string>(
+    variant.apiType === 'REST' ? (variant.body || variant.query || '') : (variant.query || '')
+  );
   const [variablesStr, setVariablesStr] = useState<string>(() => {
     return JSON.stringify(variant.defaultVariables || {}, null, 2);
   });
@@ -83,6 +86,13 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
   // Environments
   const [environments, setEnvironments] = useState<Environment[]>([]);
   const [selectedEnvId, setSelectedEnvId] = useState<string>(variant.environmentId || '');
+  const [securityModalState, setSecurityModalState] = useState<{
+    isOpen: boolean;
+    mode: 'FLOW' | 'STEP';
+    environment: Environment;
+    stepName?: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   useEffect(() => {
     api.getEnvironments().then(envs => {
@@ -219,7 +229,7 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
       skipped: false,
       query,
       endpoint: variant.endpoint,
-      body: variant.body,
+      body: variant.apiType === 'REST' ? query : variant.body,
       method: variant.method,
       apiType: variant.apiType,
       overrideVariables: parsedVariables,
@@ -235,6 +245,26 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
       variables: extraVars
     };
 
+    const targetEnv =
+      environments.find(e => e.id === selectedEnvId) ||
+      environments.find(e => e.id === variant.environmentId) ||
+      environments[0];
+
+    if (targetEnv?.isProtected) {
+      setSecurityModalState({
+        isOpen: true,
+        mode: 'STEP',
+        environment: targetEnv,
+        stepName: variant.name,
+        onConfirm: () => doExecute(stepConfig, simulatedContext)
+      });
+      return;
+    }
+
+    doExecute(stepConfig, simulatedContext);
+  };
+
+  const doExecute = async (stepConfig: FlowStepConfig, simulatedContext: Partial<ExecutionContext>) => {
     setIsRunning(true);
     try {
       // Execute without writing to global history benchmarks to keep playground clean
@@ -350,7 +380,10 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
     setIsSaving(true);
     try {
       const updated = await api.updateVariant(variant.id, {
-        query,
+        query: variant.apiType === 'REST' ? (variant.query || '') : query,
+        body: variant.apiType === 'REST' ? query : variant.body,
+        endpoint: variant.endpoint,
+        method: variant.method,
         defaultVariables: parsedVariables,
         customHeaders: customHeadersObj,
         customValidations: validations,
@@ -1281,6 +1314,17 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
           </div>
         </div>
       </div>
+
+      {securityModalState && (
+        <EnvironmentSecurityModal
+          isOpen={securityModalState.isOpen}
+          mode={securityModalState.mode}
+          environment={securityModalState.environment}
+          stepName={securityModalState.stepName}
+          onConfirm={securityModalState.onConfirm}
+          onClose={() => setSecurityModalState(null)}
+        />
+      )}
     </div>,
     document.body
   );
