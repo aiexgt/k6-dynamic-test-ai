@@ -30,6 +30,7 @@ import { VariantEditorView } from './VariantEditorView';
 import { StepDetailModal } from '../Playground/StepDetailModal';
 import { VariantTesterModal } from './VariantTesterModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
+import { Pagination } from '../common/Pagination';
 import { useFeedback } from '../../context/FeedbackContext';
 import { downloadJson, sanitizeFilename } from '../../utils/fileTransfer';
 
@@ -82,6 +83,8 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
   const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
   const [editingInitialCategory, setEditingInitialCategory] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [variantPage, setVariantPage] = useState(1);
+  const [variantPageSize, setVariantPageSize] = useState(24);
 
   const updateUrl = (variantId?: string | null, catFilter?: string, search?: string) => {
     if (typeof window === 'undefined') return;
@@ -105,6 +108,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
 
   const handleSearchChange = (val: string) => {
     setSearchTerm(val);
+    setVariantPage(1);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       if (val) url.searchParams.set('search', val);
@@ -115,6 +119,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
 
   const handleCategoryFilterChange = (cat: string) => {
     setSelectedCategoryFilter(cat);
+    setVariantPage(1);
     updateUrl(undefined, cat);
   };
 
@@ -379,6 +384,12 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     });
   }, [variants, selectedCategoryFilter, searchTerm]);
 
+  // Paginated Variants
+  const paginatedVariants = useMemo(() => {
+    const start = (variantPage - 1) * variantPageSize;
+    return filteredVariants.slice(start, start + variantPageSize);
+  }, [filteredVariants, variantPage, variantPageSize]);
+
   // Grouped by Category map
   const groupedVariants = useMemo(() => {
     const map = new Map<string, Variant[]>();
@@ -386,7 +397,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     categories.forEach(cat => map.set(cat, []));
     map.set('Sin Categoría', []);
 
-    filteredVariants.forEach(v => {
+    paginatedVariants.forEach(v => {
       const cat = v.category && categories.includes(v.category) ? v.category : 'Sin Categoría';
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(v);
@@ -400,7 +411,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
       }
     });
     return result;
-  }, [filteredVariants, categories, selectedCategoryFilter, searchTerm]);
+  }, [paginatedVariants, categories, selectedCategoryFilter, searchTerm]);
 
   // Full-screen Variant Editor View
   if (isEditorOpen) {
@@ -659,15 +670,25 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
 
           {viewMode === 'list' ? (
             <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl divide-y divide-slate-100 dark:divide-slate-800/80 shadow-xs overflow-hidden">
-              {filteredVariants.map(variant => renderVariantRow(variant))}
+              {paginatedVariants.map(variant => renderVariantRow(variant))}
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredVariants.map(variant => renderVariantCard(variant))}
+              {paginatedVariants.map(variant => renderVariantCard(variant))}
             </div>
           )}
         </div>
       )}
+
+      {/* Pagination for Variant Catalog */}
+      <Pagination
+        currentPage={variantPage}
+        totalItems={filteredVariants.length}
+        pageSize={variantPageSize}
+        onPageChange={setVariantPage}
+        onPageSizeChange={setVariantPageSize}
+        pageSizeOptions={[12, 24, 48, 96]}
+      />
 
       {/* Modal de Detalle / Inspección de Ejecución de Variante */}
       {executionResult && (
@@ -1110,47 +1131,52 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
         </div>
 
         {/* Footer Actions */}
-        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-          <button
-            onClick={e => handleCopyQuery(e, variant.id, variant.query)}
-            className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 transition-colors"
-          >
-            {copiedId === variant.id ? (
-              <>
-                <Check className="w-3 h-3 text-emerald-500" />
-                <span className="text-emerald-500 font-semibold">Copiado</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3 h-3" />
-                <span>Copiar</span>
-              </>
-            )}
-          </button>
-
-          <div className="flex items-center gap-1">
+        <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
+          <div className="flex items-center justify-between gap-2">
             <button
-              onClick={() => setTestingVariant(variant)}
-              className="flex items-center gap-1 px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/60 bg-orange-50 dark:bg-orange-950/30 hover:bg-orange-100 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-xs font-semibold transition-all shadow-xs"
-              title="Abrir en GraphiQL Sandbox para probar peticiones en tiempo real"
+              onClick={e => handleCopyQuery(e, variant.id, variant.query)}
+              className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 transition-colors"
             >
-              <FlaskConical className="w-3 h-3 text-orange-600 dark:text-orange-400" />
-              <span>Playground</span>
-            </button>
-
-            <button
-              onClick={() => handleExecuteVariant(variant)}
-              disabled={runningVariantId === variant.id}
-              className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition-all shadow-xs disabled:opacity-50"
-              title="Ejecutar esta variante inmediatamente en el entorno activo"
-            >
-              {runningVariantId === variant.id ? (
-                <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin" />
+              {copiedId === variant.id ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500" />
+                  <span className="text-emerald-500 font-semibold">Copiado</span>
+                </>
               ) : (
-                <Play className="w-3 h-3 text-emerald-600 fill-emerald-600" />
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copiar</span>
+                </>
               )}
-              <span>Ejecutar</span>
             </button>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setTestingVariant(variant)}
+                className="flex items-center gap-1 px-2 py-1 rounded-lg border border-orange-200 dark:border-orange-800/60 bg-orange-50 dark:bg-orange-950/30 hover:bg-orange-100 dark:hover:bg-orange-900/40 text-orange-700 dark:text-orange-300 text-xs font-semibold transition-all shadow-xs"
+                title="Abrir en GraphiQL Sandbox para probar peticiones en tiempo real"
+              >
+                <FlaskConical className="w-3 h-3 text-orange-600 dark:text-orange-400" />
+                <span>Playground</span>
+              </button>
+
+              <button
+                onClick={() => handleExecuteVariant(variant)}
+                disabled={runningVariantId === variant.id}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-emerald-200 dark:border-emerald-800/60 bg-emerald-50 dark:bg-emerald-950/30 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 text-xs font-semibold transition-all shadow-xs disabled:opacity-50"
+                title="Ejecutar esta variante inmediatamente en el entorno activo"
+              >
+                {runningVariantId === variant.id ? (
+                  <RefreshCw className="w-3 h-3 text-emerald-600 animate-spin" />
+                ) : (
+                  <Play className="w-3 h-3 text-emerald-600 fill-emerald-600" />
+                )}
+                <span>Ejecutar</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-1 pt-1.5 border-t border-slate-100/70 dark:border-slate-800/60">
             <button
               onClick={() => handleExportSingle(variant)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"

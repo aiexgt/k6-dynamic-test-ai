@@ -30,6 +30,18 @@ export const GlobalTestsView: React.FC = () => {
     setTests(prev => prev.map(t => (t.id === id ? { ...t, enabled: !t.enabled } : t)));
   };
 
+  const handleToggleGql = (id: string) => {
+    setTests(prev =>
+      prev.map(t => (t.id === id ? { ...t, graphql: t.graphql === false ? true : false } : t))
+    );
+  };
+
+  const handleToggleRest = (id: string) => {
+    setTests(prev =>
+      prev.map(t => (t.id === id ? { ...t, rest: t.rest === false ? true : false } : t))
+    );
+  };
+
   const handleThresholdChange = (id: string, threshold: number) => {
     setTests(prev => prev.map(t => (t.id === id ? { ...t, threshold } : t)));
   };
@@ -147,8 +159,47 @@ export const GlobalTestsView: React.FC = () => {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <label className="relative inline-flex items-center cursor-pointer">
+                <div className="flex flex-wrap items-center gap-3 self-start sm:self-center">
+                  {/* Checkboxes GraphQL & REST */}
+                  <div className="flex items-center gap-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700/60 text-xs">
+                    {/* GraphQL Checkbox */}
+                    <label
+                      className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg cursor-pointer hover:bg-white dark:hover:bg-slate-700 transition-colors select-none"
+                      title="Aplica para peticiones GraphQL"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={test.graphql !== false}
+                        onChange={() => handleToggleGql(test.id)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-orange-600 focus:ring-orange-500 cursor-pointer"
+                      />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-orange-600 dark:text-orange-400">
+                        GraphQL
+                      </span>
+                    </label>
+
+                    {/* REST Checkbox */}
+                    <label
+                      className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg cursor-pointer hover:bg-white dark:hover:bg-slate-700 transition-colors select-none"
+                      title="Aplica para peticiones REST"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={test.rest !== false}
+                        onChange={() => handleToggleRest(test.id)}
+                        className="w-3.5 h-3.5 rounded border-slate-300 dark:border-slate-600 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                      />
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                        REST
+                      </span>
+                    </label>
+                  </div>
+
+                  {/* Enable Switch */}
+                  <label
+                    className="relative inline-flex items-center cursor-pointer"
+                    title={test.enabled ? 'Regla activa' : 'Regla desactivada'}
+                  >
                     <input
                       type="checkbox"
                       checked={test.enabled}

@@ -625,6 +625,16 @@ apiRouter.delete('/history', (_req: Request, res: Response) => {
   return res.json({ success: true, message: 'Historial de benchmarks vaciado' });
 });
 
+// --- VARIANT METRICS (LOCAL DB ONLY) ---
+apiRouter.get('/analytics/variant-metrics', (_req: Request, res: Response) => {
+  return res.json(Database.getVariantMetrics());
+});
+
+apiRouter.delete('/analytics/variant-metrics', (_req: Request, res: Response) => {
+  Database.clearVariantMetrics();
+  return res.json({ success: true, message: 'Métricas de variantes vaciadas' });
+});
+
 // --- SETTINGS ---
 apiRouter.get('/settings', (_req: Request, res: Response) => {
   return res.json(Database.getSettings());

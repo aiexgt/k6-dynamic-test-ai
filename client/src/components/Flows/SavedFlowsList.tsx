@@ -22,6 +22,7 @@ import { FlowExecutionModal } from '../Playground/FlowExecutionModal';
 import { StepDetailModal } from '../Playground/StepDetailModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { EnvironmentSecurityModal } from '../common/EnvironmentSecurityModal';
+import { Pagination } from '../common/Pagination';
 import { downloadJson, sanitizeFilename } from '../../utils/fileTransfer';
 
 interface SavedFlowsListProps {
@@ -70,6 +71,8 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
   const [editingName, setEditingName] = useState<string>('');
   const [editingDesc, setEditingDesc] = useState<string>('');
   const [searchTerm, setSearchTerm] = useState<string>('');
+  const [flowPage, setFlowPage] = useState(1);
+  const [flowPageSize, setFlowPageSize] = useState(12);
 
   const [versionHistoryTarget, setVersionHistoryTarget] = useState<SavedFlow | null>(null);
 
@@ -224,6 +227,8 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
     return nameMatch || descMatch || categoryMatch;
   });
 
+  const paginatedFlows = filteredFlows.slice((flowPage - 1) * flowPageSize, flowPage * flowPageSize);
+
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -243,13 +248,19 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
           <input
             type="text"
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={e => {
+              setSearchTerm(e.target.value);
+              setFlowPage(1);
+            }}
             placeholder="Buscar flujos por nombre, descripción o categorías de pasos..."
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-orange-500 transition-colors shadow-xs"
           />
           {searchTerm && (
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => {
+                setSearchTerm('');
+                setFlowPage(1);
+              }}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               title="Limpiar búsqueda"
             >
@@ -280,13 +291,13 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
         </div>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
-          {filteredFlows.map(flow => {
+          {paginatedFlows.map(flow => {
             const activeSteps = (flow.steps || []).filter(s => !s.skipped);
 
             return (
               <div
                 key={flow.id}
-                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4 flex flex-col justify-between shadow-sm transition-colors"
+                className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 flex flex-col justify-between shadow-sm transition-colors"
               >
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -402,64 +413,13 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
                   )}
                 </div>
 
-                <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex items-center justify-between">
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleToggleLock(flow)}
-                      className={`p-1 rounded transition-colors ${
-                        flow.isLocked
-                          ? 'text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-950/40'
-                          : 'text-slate-400 hover:text-amber-500'
-                      }`}
-                      title={
-                        flow.isLocked
-                          ? `Desbloquear flujo (bloqueado por ${flow.lockedByName || 'equipo'})`
-                          : 'Marcar flujo como bloqueado'
-                      }
-                    >
-                      {flow.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
-                    </button>
-                    <button
-                      onClick={() => setVersionHistoryTarget(flow)}
-                      className="p-1 rounded text-slate-400 hover:text-orange-500 transition-colors"
-                      title="Historial de versiones y rollback"
-                    >
-                      <History className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleStartEdit(flow)}
-                      className="p-1 rounded text-slate-400 hover:text-orange-500 transition-colors"
-                      title="Editar nombre y descripción"
-                    >
-                      <Edit2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleClone(flow)}
-                      className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-colors"
-                      title="Duplicar flujo"
-                    >
-                      <CopyPlus className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(flow)}
-                      className="p-1 rounded text-slate-400 hover:text-rose-500 transition-colors"
-                      title={flow.isLocked ? 'Flujo bloqueado (puedes enviarlo a la papelera)' : 'Mover flujo a la papelera'}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleExportSingle(flow)}
-                      className="p-1 rounded text-slate-400 hover:text-orange-500 transition-colors"
-                      title="Exportar flujo a JSON"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
+                {/* Flow Card Action Footer (Non-crowded 2-tier layout) */}
+                <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 flex flex-col gap-2">
+                  {/* Primary Actions: Ejecutar & Cargar */}
+                  <div className="flex items-center gap-2">
                     <button
                       onClick={() => handleQuickRun(flow)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 text-slate-700 dark:text-slate-300 text-xs font-semibold"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
                       title="Ejecutar flujo con animación de montaña"
                     >
                       <Play className="w-3 h-3 text-orange-500 fill-orange-500" />
@@ -468,10 +428,68 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
 
                     <button
                       onClick={() => onLoadFlowInPlayground(flow)}
-                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold"
+                      className="flex-1 flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-2xs transition-all"
+                      title="Cargar flujo en Playground"
                     >
                       <span>Cargar</span>
                       <ArrowRight className="w-3 h-3" />
+                    </button>
+                  </div>
+
+                  {/* Secondary Tools: Lock, Version History, Edit, Clone, Export, Delete */}
+                  <div className="flex items-center justify-between text-slate-400 pt-0.5">
+                    <div className="flex items-center gap-0.5">
+                      <button
+                        onClick={() => handleToggleLock(flow)}
+                        className={`p-1.5 rounded-lg transition-colors ${
+                          flow.isLocked
+                            ? 'text-amber-500 hover:text-amber-600 bg-amber-50 dark:bg-amber-950/40'
+                            : 'text-slate-400 hover:text-amber-500 hover:bg-slate-100 dark:hover:bg-slate-800'
+                        }`}
+                        title={
+                          flow.isLocked
+                            ? `Desbloquear flujo (bloqueado por ${flow.lockedByName || 'equipo'})`
+                            : 'Marcar flujo como bloqueado'
+                        }
+                      >
+                        {flow.isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                      </button>
+                      <button
+                        onClick={() => setVersionHistoryTarget(flow)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Historial de versiones y rollback"
+                      >
+                        <History className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleStartEdit(flow)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Editar nombre y descripción"
+                      >
+                        <Edit2 className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleClone(flow)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Duplicar flujo"
+                      >
+                        <CopyPlus className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleExportSingle(flow)}
+                        className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                        title="Exportar flujo a JSON"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    <button
+                      onClick={() => handleDelete(flow)}
+                      className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                      title={flow.isLocked ? 'Flujo bloqueado (puedes enviarlo a la papelera)' : 'Mover flujo a la papelera'}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -480,6 +498,16 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
           })}
         </div>
       )}
+
+      {/* Pagination for Saved Flows */}
+      <Pagination
+        currentPage={flowPage}
+        totalItems={filteredFlows.length}
+        pageSize={flowPageSize}
+        onPageChange={setFlowPage}
+        onPageSizeChange={setFlowPageSize}
+        pageSizeOptions={[12, 24, 48]}
+      />
 
       {securityModalState && (
         <EnvironmentSecurityModal

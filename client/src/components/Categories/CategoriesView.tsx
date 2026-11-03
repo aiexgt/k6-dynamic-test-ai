@@ -3,6 +3,7 @@ import { FolderTree, Plus, Trash2, Edit2, Check, X, ArrowLeft, History, Layers, 
 import { Variant } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
+import { Pagination } from '../common/Pagination';
 
 interface CategoriesViewProps {
   categories: string[];
@@ -28,6 +29,8 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
   const [editingCatName, setEditingCatName] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState('');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [catPage, setCatPage] = useState(1);
+  const [catPageSize, setCatPageSize] = useState(10);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,6 +58,13 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
     onRenameCategory(oldName, clean);
     setEditingCatName(null);
   };
+
+  const totalCatPages = Math.ceil(categories.length / catPageSize) || 1;
+  const currentCatPage = Math.min(catPage, totalCatPages);
+  const paginatedCategories = categories.slice(
+    (currentCatPage - 1) * catPageSize,
+    currentCatPage * catPageSize
+  );
 
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
@@ -117,7 +127,7 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
             No hay categorías creadas.
           </div>
         ) : (
-          categories.map(cat => {
+          paginatedCategories.map(cat => {
             const count = variants.filter(v => v.category === cat).length;
             const isEditing = editingCatName === cat;
             const isSystemCategory = cat === 'Sin Categoría';
@@ -212,6 +222,18 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
           })
         )}
       </div>
+
+      <Pagination
+        currentPage={currentCatPage}
+        totalItems={categories.length}
+        pageSize={catPageSize}
+        onPageChange={setCatPage}
+        onPageSizeChange={size => {
+          setCatPageSize(size);
+          setCatPage(1);
+        }}
+        pageSizeOptions={[6, 10, 20, 50]}
+      />
 
       <VersionHistoryModal
         isOpen={isHistoryOpen}

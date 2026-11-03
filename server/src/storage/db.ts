@@ -10,7 +10,8 @@ import {
   Environment,
   GlobalTestConfig,
   UserProfile,
-  ItemVersion
+  ItemVersion,
+  VariantMetric
 } from '../types';
 
 const DATA_DIR = path.resolve(__dirname, '../../data');
@@ -49,14 +50,18 @@ export const DEFAULT_GLOBAL_TESTS: GlobalTestConfig[] = [
     name: 'Status Code HTTP 200',
     description: 'Verifica que la petición responda con código HTTP 200 OK',
     type: 'STATUS_CODE_200',
-    enabled: true
+    enabled: true,
+    graphql: true,
+    rest: true
   },
   {
     id: 'test-no-graphql-errors',
     name: 'Sin Errores GraphQL',
     description: 'Valida que la respuesta no contenga bloque de errores en errors[]',
     type: 'NO_GRAPHQL_ERRORS',
-    enabled: true
+    enabled: true,
+    graphql: true,
+    rest: false
   },
   {
     id: 'test-max-response-time',
@@ -64,21 +69,27 @@ export const DEFAULT_GLOBAL_TESTS: GlobalTestConfig[] = [
     description: 'Comprueba que la latencia no supere el umbral máximo de tolerancia (ms)',
     type: 'MAX_RESPONSE_TIME',
     threshold: 2000,
-    enabled: true
+    enabled: true,
+    graphql: true,
+    rest: true
   },
   {
     id: 'test-has-data',
     name: 'Cuerpo con data válido',
     description: 'Verifica que la respuesta contenga el objeto data de GraphQL no nulo',
     type: 'HAS_DATA',
-    enabled: true
+    enabled: true,
+    graphql: true,
+    rest: false
   },
   {
     id: 'test-json-content-type',
     name: 'Content-Type JSON',
     description: 'Asegura que las cabeceras o cuerpo correspondan a formato JSON válido',
     type: 'JSON_CONTENT_TYPE',
-    enabled: false
+    enabled: false,
+    graphql: true,
+    rest: true
   }
 ];
 
@@ -219,6 +230,8 @@ export class Database {
   private static globalTestsLoaded = false;
   private static versionsCache: ItemVersion[] = [];
   private static versionsLoaded = false;
+  private static variantMetricsCache: VariantMetric[] = [];
+  private static variantMetricsLoaded = false;
 
   /**
    * Initializes the dual-database architecture (Shared DB for flows/variants + Local DB for environments/secrets)
@@ -253,6 +266,8 @@ export class Database {
     this.globalTestsLoaded = true;
     this.versionsCache = readJsonFile<ItemVersion[]>('versions.json', []);
     this.versionsLoaded = true;
+    this.variantMetricsCache = readJsonFile<VariantMetric[]>('variant_metrics.json', []);
+    this.variantMetricsLoaded = true;
 
     const defaultEnv = this.environmentsCache[0] || DEFAULT_ENVIRONMENTS[0];
     this.settingsCache = readJsonFile<EnvironmentSettings>('settings.json', {
@@ -489,6 +504,12 @@ export class Database {
 
       CREATE TABLE IF NOT EXISTS global_tests (
         id VARCHAR(100) PRIMARY KEY,
+        data JSONB NOT NULL,
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS local_variant_metrics (
+        variant_id TEXT PRIMARY KEY,
         data JSONB NOT NULL,
         updated_at TIMESTAMPTZ DEFAULT NOW()
       );
@@ -1310,6 +1331,8 @@ export class Database {
     this.globalTestsLoaded = true;
     this.versionsCache = readJsonFile<ItemVersion[]>('versions.json', []);
     this.versionsLoaded = true;
+    this.variantMetricsCache = readJsonFile<VariantMetric[]>('variant_metrics.json', []);
+    this.variantMetricsLoaded = true;
     return this.globalTestsCache;
   }
 
@@ -1357,6 +1380,84 @@ export class Database {
 
     if (localPgPool && isLocalPgConnected) {
       localPgPool.query('TRUNCATE TABLE history').catch(console.error);
+    }
+  }
+
+  // --- VARIANT METRICS (LOCAL DB ONLY) ---
+  static getVariantMetrics(): VariantMetric[] {
+    if (this.variantMetricsLoaded) return this.variantMetricsCache;
+    this.variantMetricsCache = readJsonFile<VariantMetric[]>('variant_metrics.json', []);
+    this.variantMetricsLoaded = true;
+    return this.variantMetricsCache;
+  }
+
+  static recordVariantExecution(
+    variantId: string,
+    variantName: string,
+    category: string,
+    apiType: 'GRAPHQL' | 'REST',
+    durationMs: number,
+    isSuccess: boolean
+  ): void {
+    if (!variantId) return;
+
+    this.getVariantMetrics();
+
+    let metric = this.variantMetricsCache.find(m => m.variantId === variantId);
+    if (!metric) {
+      metric = {
+        variantId,
+        variantName: variantName || 'Variante',
+        category: category || 'Sin Categoría',
+        apiType: apiType || 'GRAPHQL',
+        totalRuns: 0,
+        totalTimeMs: 0,
+        avgResponseTimeMs: 0,
+        successRuns: 0,
+        failedRuns: 0,
+        successRate: 0,
+        lastExecutedAt: new Date().toISOString(),
+        lastResponseTimeMs: durationMs,
+        lastStatus: isSuccess ? 'SUCCESS' : 'FAILED'
+      };
+      this.variantMetricsCache.push(metric);
+    }
+
+    metric.variantName = variantName || metric.variantName;
+    metric.category = category || metric.category;
+    metric.apiType = apiType || metric.apiType;
+    metric.totalRuns += 1;
+    metric.totalTimeMs += durationMs;
+    metric.avgResponseTimeMs = Math.round(metric.totalTimeMs / metric.totalRuns);
+    if (isSuccess) {
+      metric.successRuns += 1;
+    } else {
+      metric.failedRuns += 1;
+    }
+    metric.successRate = Math.round((metric.successRuns / metric.totalRuns) * 100);
+    metric.lastExecutedAt = new Date().toISOString();
+    metric.lastResponseTimeMs = durationMs;
+    metric.lastStatus = isSuccess ? 'SUCCESS' : 'FAILED';
+
+    writeJsonFile('variant_metrics.json', this.variantMetricsCache);
+
+    if (localPgPool && isLocalPgConnected) {
+      localPgPool.query(
+        `INSERT INTO local_variant_metrics (variant_id, data, updated_at)
+         VALUES ($1, $2, NOW())
+         ON CONFLICT (variant_id) DO UPDATE SET data = $2, updated_at = NOW()`,
+        [variantId, JSON.stringify(metric)]
+      ).catch(console.error);
+    }
+  }
+
+  static clearVariantMetrics(): void {
+    this.variantMetricsCache = [];
+    this.variantMetricsLoaded = true;
+    writeJsonFile('variant_metrics.json', []);
+
+    if (localPgPool && isLocalPgConnected) {
+      localPgPool.query('TRUNCATE TABLE local_variant_metrics').catch(console.error);
     }
   }
 

@@ -10,7 +10,8 @@ import {
   StepExecutionResult,
   GlobalTestConfig,
   UserProfile,
-  ItemVersion
+  ItemVersion,
+  VariantMetric
 } from './types';
 
 const API_BASE = '/api';
@@ -438,6 +439,20 @@ export const api = {
       headers: getAuthHeaders()
     });
     if (!res.ok) throw new Error('Error clearing history');
+  },
+
+  async getVariantMetrics(): Promise<VariantMetric[]> {
+    const res = await fetch(`${API_BASE}/analytics/variant-metrics`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Error fetching variant metrics');
+    return res.json();
+  },
+
+  async clearVariantMetrics(): Promise<void> {
+    const res = await fetch(`${API_BASE}/analytics/variant-metrics`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Error clearing variant metrics');
   },
 
   // Settings

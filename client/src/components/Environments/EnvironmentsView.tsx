@@ -3,6 +3,7 @@ import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, C
 import { Environment } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 import { api } from '../../api';
+import { Pagination } from '../common/Pagination';
 
 interface HeaderRow {
   id: string;
@@ -46,6 +47,8 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   });
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
   const [variableRows, setVariableRows] = useState<VariableRow[]>([]);
+  const [envPage, setEnvPage] = useState(1);
+  const [envPageSize, setEnvPageSize] = useState(9);
 
   const updateUrlEnv = (envParam: string | null) => {
     if (typeof window === 'undefined') return;
@@ -246,6 +249,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
 
   const handleSearchChange = (val: string) => {
     setSearchTerm(val);
+    setEnvPage(1);
     if (typeof window !== 'undefined') {
       const url = new URL(window.location.href);
       if (val) url.searchParams.set('search', val);
@@ -669,6 +673,13 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
     return nameMatch || urlMatch || restMatch;
   });
 
+  const totalEnvPages = Math.ceil(filteredEnvironments.length / envPageSize) || 1;
+  const currentEnvPage = Math.min(envPage, totalEnvPages);
+  const paginatedEnvironments = filteredEnvironments.slice(
+    (currentEnvPage - 1) * envPageSize,
+    currentEnvPage * envPageSize
+  );
+
   // --- RENDER ENVIRONMENTS LIST SCREEN ---
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
@@ -729,110 +740,124 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
           </button>
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredEnvironments.map(env => {
-          const isActive = env.id === activeEnvironmentId;
-          const headerCount = Object.keys(env.customHeaders || {}).length;
-          const varCount = Object.keys(env.variables || {}).length;
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedEnvironments.map(env => {
+            const isActive = env.id === activeEnvironmentId;
+            const headerCount = Object.keys(env.customHeaders || {}).length;
+            const varCount = Object.keys(env.variables || {}).length;
 
-          return (
-            <div
-              key={env.id}
-              className={`p-4 rounded-2xl border transition-all ${
-                isActive
-                  ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/10 shadow-sm ring-1 ring-orange-500/30'
-                  : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
-              }`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1 flex-1 min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                      {env.name}
-                    </span>
-                    {isActive && (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30">
-                        <CheckCircle2 className="w-3 h-3" />
-                        Activo
+            return (
+              <div
+                key={env.id}
+                className={`p-4 rounded-2xl border transition-all ${
+                  isActive
+                    ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/10 shadow-sm ring-1 ring-orange-500/30'
+                    : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-1 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                        {env.name}
                       </span>
-                    )}
-                    {env.useMockSimulator && (
-                      <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                        Mock
-                      </span>
-                    )}
-                    {env.isProtected && (
-                      <span
-                        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                        title={env.securityCode ? 'Protegido con código PIN' : `Protegido con nombre: "${env.name}"`}
-                      >
-                        <ShieldAlert className="w-3 h-3 text-amber-500" />
-                        <span>Protegido</span>
-                      </span>
-                    )}
-                  </div>
-                  <div className="space-y-0.5 mt-1">
-                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded shrink-0">GraphQL</span>
-                      <span className="truncate">{env.magentoUrl}</span>
-                    </p>
-                    {env.magentoRestUrl && (
+                      {isActive && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Activo
+                        </span>
+                      )}
+                      {env.useMockSimulator && (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                          Mock
+                        </span>
+                      )}
+                      {env.isProtected && (
+                        <span
+                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                          title={env.securityCode ? 'Protegido con código PIN' : `Protegido con nombre: "${env.name}"`}
+                        >
+                          <ShieldAlert className="w-3 h-3 text-amber-500" />
+                          <span>Protegido</span>
+                        </span>
+                      )}
+                    </div>
+                    <div className="space-y-0.5 mt-1">
                       <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded shrink-0">REST</span>
-                        <span className="truncate">{env.magentoRestUrl}</span>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded shrink-0">GraphQL</span>
+                        <span className="truncate">{env.magentoUrl}</span>
                       </p>
+                      {env.magentoRestUrl && (
+                        <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded shrink-0">REST</span>
+                          <span className="truncate">{env.magentoRestUrl}</span>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => handleStartEdit(env)}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Editar entorno"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleClone(env)}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                      title="Duplicar entorno"
+                    >
+                      <CopyPlus className="w-3.5 h-3.5" />
+                    </button>
+                    {environments.length > 1 && (
+                      <button
+                        onClick={() => handleDelete(env)}
+                        className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                        title="Eliminar entorno"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
                     )}
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => handleStartEdit(env)}
-                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Editar entorno"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={() => handleClone(env)}
-                    className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                    title="Duplicar entorno"
-                  >
-                    <CopyPlus className="w-3.5 h-3.5" />
-                  </button>
-                  {environments.length > 1 && (
+                {/* Pills / Metadata */}
+                <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
+                    <span>{headerCount} headers</span>
+                    <span>•</span>
+                    <span>{varCount} variables</span>
+                  </div>
+
+                  {!isActive && (
                     <button
-                      onClick={() => handleDelete(env)}
-                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
-                      title="Eliminar entorno"
+                      onClick={() => onSelectEnvironment(env.id)}
+                      className="text-xs font-bold text-orange-600 dark:text-orange-400 hover:underline"
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
+                      Activar
                     </button>
                   )}
                 </div>
               </div>
+            );
+          })}
+          </div>
 
-              {/* Pills / Metadata */}
-              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-800/80 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-3 text-slate-500 dark:text-slate-400">
-                  <span>{headerCount} headers</span>
-                  <span>•</span>
-                  <span>{varCount} variables</span>
-                </div>
-
-                {!isActive && (
-                  <button
-                    onClick={() => onSelectEnvironment(env.id)}
-                    className="text-xs font-bold text-orange-600 dark:text-orange-400 hover:underline"
-                  >
-                    Activar
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-        </div>
+          <Pagination
+            currentPage={currentEnvPage}
+            totalItems={filteredEnvironments.length}
+            pageSize={envPageSize}
+            onPageChange={setEnvPage}
+            onPageSizeChange={size => {
+              setEnvPageSize(size);
+              setEnvPage(1);
+            }}
+            pageSizeOptions={[6, 9, 12, 24]}
+          />
+        </>
       )}
     </div>
   );

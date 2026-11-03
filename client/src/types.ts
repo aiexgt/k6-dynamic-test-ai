@@ -42,6 +42,24 @@ export interface GlobalTestConfig {
   type: GlobalTestType;
   enabled: boolean;
   threshold?: number;
+  graphql?: boolean;
+  rest?: boolean;
+}
+
+export interface VariantMetric {
+  variantId: string;
+  variantName: string;
+  category: string;
+  apiType: 'GRAPHQL' | 'REST';
+  totalRuns: number;
+  totalTimeMs: number;
+  avgResponseTimeMs: number;
+  successRuns: number;
+  failedRuns: number;
+  successRate: number;
+  lastExecutedAt: string;
+  lastResponseTimeMs: number;
+  lastStatus: 'SUCCESS' | 'FAILED';
 }
 
 export interface TestResult {

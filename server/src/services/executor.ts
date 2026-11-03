@@ -721,10 +721,17 @@ export class FlowExecutionService {
     }
 
     // Evaluación de Pruebas Globales y Personalizadas (Requirement 3 & 4)
-    const globalTests = Database.getGlobalTests();
+    const allGlobalTests = Database.getGlobalTests();
+    const applicableGlobalTests = allGlobalTests.filter(gt => {
+      if (!gt.enabled) return false;
+      if (isRest && gt.rest === false) return false;
+      if (!isRest && gt.graphql === false) return false;
+      return true;
+    });
+
     const effectiveValidations = step.customValidations !== undefined ? step.customValidations : variant.customValidations;
     const testResults = this.evaluateTests(
-      globalTests,
+      applicableGlobalTests,
       effectiveValidations,
       status,
       durationMs,
@@ -742,6 +749,20 @@ export class FlowExecutionService {
 
     const hasFailedTests = testResults.some(t => !t.passed);
     const hasError = !!(responseErrors && responseErrors.length > 0) || status >= 400 || hasFailedTests;
+    const isStepSuccess = !hasError && !hasFailedTests && status >= 200 && status < 300;
+
+    // Registrar métricas por variante en BD local (no compartida)
+    if (variant && variant.id) {
+      Database.recordVariantExecution(
+        variant.id,
+        variant.name,
+        step.category || variant.category,
+        isRest ? 'REST' : 'GRAPHQL',
+        durationMs,
+        isStepSuccess
+      );
+    }
+
     const errorMessage = responseErrors
       ? responseErrors.map((e: any) => e.message).join(' | ')
       : hasFailedTests
