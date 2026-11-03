@@ -184,16 +184,6 @@ export const BenchmarkDashboard: React.FC = () => {
     }
   };
 
-  // If viewing details of a specific execution, render ExecutionDetailView
-  if (selectedExecution) {
-    return (
-      <ExecutionDetailView
-        execution={selectedExecution}
-        onBack={handleCloseExecution}
-      />
-    );
-  }
-
   // Filtered History
   const filteredHistory = history.filter(h => {
     if (typeFilter === 'FLOW') return h.executionType === 'FLOW';
@@ -223,6 +213,17 @@ export const BenchmarkDashboard: React.FC = () => {
     const start = (variantPage - 1) * variantPageSize;
     return filteredVariantMetrics.slice(start, start + variantPageSize);
   }, [filteredVariantMetrics, variantPage, variantPageSize]);
+
+  // If viewing details of a specific execution, render ExecutionDetailView
+  // Placed AFTER all hooks to adhere strictly to React Rules of Hooks
+  if (selectedExecution) {
+    return (
+      <ExecutionDetailView
+        execution={selectedExecution}
+        onBack={handleCloseExecution}
+      />
+    );
+  }
 
   // History KPIs
   const totalRuns = history.length;
