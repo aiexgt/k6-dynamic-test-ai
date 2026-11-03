@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, CopyPlus, Search, X, ShieldAlert } from 'lucide-react';
 import { Environment } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
@@ -8,6 +8,8 @@ interface HeaderRow {
   id: string;
   key: string;
   value: string;
+  graphql: boolean;
+  rest: boolean;
 }
 
 interface VariableRow {
@@ -36,11 +38,29 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   const { confirm, prompt, toast } = useFeedback();
   const [editingEnv, setEditingEnv] = useState<Partial<Environment> | null>(null);
   const [isEditing, setIsEditing] = useState(false);
-  const [searchTerm, setSearchTerm] = useState('');
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('search') || '';
+    }
+    return '';
+  });
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
   const [variableRows, setVariableRows] = useState<VariableRow[]>([]);
 
-  const handleStartCreate = () => {
+  const updateUrlEnv = (envParam: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (envParam) {
+      url.searchParams.set('env', envParam);
+    } else {
+      url.searchParams.delete('env');
+    }
+    if (window.location.pathname + window.location.search !== url.pathname + url.search) {
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const handleStartCreate = (updateUrl = true) => {
     setEditingEnv({
       name: '',
       magentoUrl: 'https://app.kosmos.test/graphql',
@@ -52,8 +72,8 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       variables: { cartId: '', sku: 'MD2', quantity: '1' }
     });
     setHeaderRows([
-      { id: '1', key: 'Content-Type', value: 'application/json' },
-      { id: '2', key: 'AuthToken', value: '' }
+      { id: '1', key: 'Content-Type', value: 'application/json', graphql: true, rest: true },
+      { id: '2', key: 'AuthToken', value: '', graphql: true, rest: false }
     ]);
     setVariableRows([
       { id: 'v1', key: 'cartId', value: '' },
@@ -62,9 +82,10 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       { id: 'v4', key: 'customerToken', value: '' }
     ]);
     setIsEditing(true);
+    if (updateUrl) updateUrlEnv('new');
   };
 
-  const handleStartEdit = (env: Environment) => {
+  const handleStartEdit = (env: Environment, updateUrl = true) => {
     setEditingEnv({
       ...env,
       isProtected: !!env.isProtected,
@@ -72,12 +93,29 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
     });
 
     // Headers
-    const hRows = Object.entries(env.customHeaders || {}).map(([k, v], idx) => ({
-      id: `hdr-${idx}-${Date.now().toString(36)}`,
-      key: k,
-      value: String(v)
-    }));
-    setHeaderRows(hRows.length > 0 ? hRows : [{ id: '1', key: 'Content-Type', value: 'application/json' }]);
+    const hRows = Object.entries(env.customHeaders || {}).map(([k, v], idx) => {
+      if (typeof v === 'object' && v !== null && ('value' in v || 'graphql' in v || 'rest' in v)) {
+        return {
+          id: `hdr-${idx}-${Date.now().toString(36)}`,
+          key: k,
+          value: String(v.value !== undefined ? v.value : ''),
+          graphql: v.graphql !== false,
+          rest: v.rest !== false
+        };
+      }
+      return {
+        id: `hdr-${idx}-${Date.now().toString(36)}`,
+        key: k,
+        value: String(v),
+        graphql: true,
+        rest: true
+      };
+    });
+    setHeaderRows(
+      hRows.length > 0
+        ? hRows
+        : [{ id: '1', key: 'Content-Type', value: 'application/json', graphql: true, rest: true }]
+    );
 
     // Variables (Requirement 2)
     const vRows = Object.entries(env.variables || {}).map(([k, v], idx) => ({
@@ -88,15 +126,54 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
     setVariableRows(vRows.length > 0 ? vRows : [{ id: 'v1', key: 'cartId', value: '' }]);
 
     setIsEditing(true);
+    if (updateUrl) updateUrlEnv(env.id);
   };
 
-  const handleAddHeaderRow = (presetKey = '', presetValue = '') => {
+  const handleCloseEditor = () => {
+    setIsEditing(false);
+    setEditingEnv(null);
+    updateUrlEnv(null);
+  };
+
+  // URL synchronization on mount and on popstate (Back/Forward)
+  useEffect(() => {
+    const handleUrlSync = () => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const envParam = params.get('env');
+      const searchParam = params.get('search');
+      if (searchParam !== null && searchParam !== searchTerm) {
+        setSearchTerm(searchParam);
+      }
+      if (envParam === 'new') {
+        if (!isEditing || editingEnv?.id) {
+          handleStartCreate(false);
+        }
+      } else if (envParam) {
+        const found = environments.find(e => e.id === envParam);
+        if (found && (!isEditing || editingEnv?.id !== found.id)) {
+          handleStartEdit(found, false);
+        }
+      } else if (!envParam && isEditing) {
+        setIsEditing(false);
+        setEditingEnv(null);
+      }
+    };
+
+    handleUrlSync();
+    window.addEventListener('popstate', handleUrlSync);
+    return () => window.removeEventListener('popstate', handleUrlSync);
+  }, [environments, isEditing, editingEnv?.id]);
+
+  const handleAddHeaderRow = (presetKey = '', presetValue = '', graphql = true, rest = true) => {
     setHeaderRows(prev => [
       ...prev,
       {
         id: 'hdr-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
         key: presetKey,
-        value: presetValue
+        value: presetValue,
+        graphql,
+        rest
       }
     ]);
   };
@@ -105,7 +182,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
     setHeaderRows(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleHeaderChange = (id: string, field: 'key' | 'value', val: string) => {
+  const handleHeaderChange = (id: string, field: 'key' | 'value' | 'graphql' | 'rest', val: any) => {
     setHeaderRows(prev => prev.map(r => (r.id === id ? { ...r, [field]: val } : r)));
   };
 
@@ -135,10 +212,16 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       return;
     }
 
-    const parsedHeaders: Record<string, string> = {};
+    const parsedHeaders: Record<string, any> = {};
     headerRows.forEach(r => {
       const k = r.key.trim();
-      if (k) parsedHeaders[k] = r.value.trim();
+      if (k) {
+        parsedHeaders[k] = {
+          value: r.value.trim(),
+          graphql: r.graphql !== false,
+          rest: r.rest !== false
+        };
+      }
     });
 
     const parsedVars: Record<string, string> = {};
@@ -158,8 +241,17 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
       variables: parsedVars
     });
 
-    setIsEditing(false);
-    setEditingEnv(null);
+    handleCloseEditor();
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (val) url.searchParams.set('search', val);
+      else url.searchParams.delete('search');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
   };
 
   const handleDelete = async (env: Environment) => {
@@ -199,15 +291,12 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   // --- RENDER EDITOR SCREEN ---
   if (isEditing && editingEnv) {
     return (
-      <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 space-y-6 pb-28">
+      <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-6 pb-28">
         {/* Top Sticky Bar */}
-        <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between -mx-4 sm:-mx-6 px-4 sm:px-6 transition-colors shadow-xs">
+        <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 -mx-4 sm:-mx-6 px-4 sm:px-6 lg:-mx-8 lg:px-8 transition-colors shadow-xs">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => {
-                setIsEditing(false);
-                setEditingEnv(null);
-              }}
+              onClick={handleCloseEditor}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
@@ -226,10 +315,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => {
-                setIsEditing(false);
-                setEditingEnv(null);
-              }}
+              onClick={handleCloseEditor}
               className="px-3.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
             >
               Cancelar
@@ -432,24 +518,34 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
                 </p>
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <button
                   type="button"
-                  onClick={() => handleAddHeaderRow('AuthToken', '')}
+                  onClick={() => handleAddHeaderRow('AuthToken', '', true, false)}
                   className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  title="Header exclusivo para GraphQL"
                 >
-                  + AuthToken
+                  + AuthToken (GQL)
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleAddHeaderRow('X-Client-Type', '1')}
+                  onClick={() => handleAddHeaderRow('Authorization', 'Bearer {{customerToken}}', false, true)}
                   className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  title="Header exclusivo para REST"
+                >
+                  + Bearer (REST)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleAddHeaderRow('X-Client-Type', '1', true, true)}
+                  className="px-2 py-1 text-[11px] font-semibold rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
+                  title="Header para ambos"
                 >
                   + X-Client-Type
                 </button>
                 <button
                   type="button"
-                  onClick={() => handleAddHeaderRow('', '')}
+                  onClick={() => handleAddHeaderRow('', '', true, true)}
                   className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm"
                 >
                   <Plus className="w-3 h-3" />
@@ -460,25 +556,55 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
 
             <div className="space-y-2">
               {headerRows.map(row => (
-                <div key={row.id} className="flex items-center gap-2">
+                <div key={row.id} className="flex items-center gap-2 p-1.5 rounded-xl bg-slate-50/70 dark:bg-slate-950/50 border border-slate-200/80 dark:border-slate-800/80">
                   <input
                     type="text"
                     value={row.key}
                     onChange={e => handleHeaderChange(row.id, 'key', e.target.value)}
                     placeholder="Header Key (ej: Store, AuthToken)"
-                    className="w-1/3 px-3 py-1.5 text-xs font-mono font-semibold rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    className="w-1/3 px-3 py-1.5 text-xs font-mono font-semibold rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
                   <input
                     type="text"
                     value={row.value}
                     onChange={e => handleHeaderChange(row.id, 'value', e.target.value)}
-                    placeholder="Header Value"
-                    className="flex-1 px-3 py-1.5 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                    placeholder="Header Value (ej: {{customerToken}})"
+                    className="flex-1 px-3 py-1.5 text-xs font-mono rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
                   />
+
+                  {/* Checkboxes: GraphQL & REST */}
+                  <div className="flex items-center gap-2 px-2.5 py-1 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-xs shrink-0 select-none shadow-2xs">
+                    <label className="flex items-center gap-1.5 cursor-pointer" title="Enviar en peticiones GraphQL">
+                      <input
+                        type="checkbox"
+                        checked={row.graphql}
+                        onChange={e => handleHeaderChange(row.id, 'graphql', e.target.checked)}
+                        className="rounded border-slate-300 text-orange-600 focus:ring-orange-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className={`text-[10px] font-bold ${row.graphql ? 'text-orange-600 dark:text-orange-400' : 'text-slate-400'}`}>
+                        GraphQL
+                      </span>
+                    </label>
+
+                    <div className="w-[1px] h-3.5 bg-slate-200 dark:bg-slate-800" />
+
+                    <label className="flex items-center gap-1.5 cursor-pointer" title="Enviar en peticiones REST">
+                      <input
+                        type="checkbox"
+                        checked={row.rest}
+                        onChange={e => handleHeaderChange(row.id, 'rest', e.target.checked)}
+                        className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-3.5 h-3.5 cursor-pointer"
+                      />
+                      <span className={`text-[10px] font-bold ${row.rest ? 'text-blue-600 dark:text-blue-400' : 'text-slate-400'}`}>
+                        REST
+                      </span>
+                    </label>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => handleRemoveHeaderRow(row.id)}
-                    className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                    className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20 shrink-0 transition-colors"
                     title="Eliminar header"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -511,13 +637,10 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
         </form>
 
         {/* Floating Action Dock */}
-        <div className="fixed bottom-6 right-6 md:right-10 z-40 flex items-center gap-2 p-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+        <div className="fixed bottom-4 sm:bottom-6 right-4 sm:right-10 z-40 max-w-[calc(100vw-2rem)] flex flex-wrap items-center gap-2 p-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
           <button
             type="button"
-            onClick={() => {
-              setIsEditing(false);
-              setEditingEnv(null);
-            }}
+            onClick={handleCloseEditor}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
           >
             Cancelar
@@ -550,7 +673,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center">
             <Server className="w-4 h-4" />
@@ -561,7 +684,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
         </div>
 
         <button
-          onClick={handleStartCreate}
+          onClick={() => handleStartCreate(true)}
           className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm transition-all"
         >
           <Plus className="w-3.5 h-3.5" />
@@ -576,13 +699,13 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
           <input
             type="text"
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={e => handleSearchChange(e.target.value)}
             placeholder="Buscar entornos por nombre, URL de GraphQL o endpoint REST..."
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-orange-500 transition-colors shadow-xs"
           />
           {searchTerm && (
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => handleSearchChange('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               title="Limpiar búsqueda"
             >
@@ -599,7 +722,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
             No se encontraron entornos que coincidan con "<strong>{searchTerm}</strong>".
           </p>
           <button
-            onClick={() => setSearchTerm('')}
+            onClick={() => handleSearchChange('')}
             className="text-xs font-semibold text-orange-600 dark:text-orange-400 hover:underline"
           >
             Limpiar búsqueda
@@ -622,8 +745,8 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
               }`}
             >
               <div className="flex items-start justify-between gap-3">
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2">
+                <div className="space-y-1 flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
                       {env.name}
                     </span>
@@ -649,14 +772,14 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
                     )}
                   </div>
                   <div className="space-y-0.5 mt-1">
-                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-sm flex items-center gap-1.5">
-                      <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded">GraphQL</span>
-                      <span>{env.magentoUrl}</span>
+                    <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
+                      <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded shrink-0">GraphQL</span>
+                      <span className="truncate">{env.magentoUrl}</span>
                     </p>
                     {env.magentoRestUrl && (
-                      <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate max-w-sm flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded">REST</span>
-                        <span>{env.magentoRestUrl}</span>
+                      <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded shrink-0">REST</span>
+                        <span className="truncate">{env.magentoRestUrl}</span>
                       </p>
                     )}
                   </div>

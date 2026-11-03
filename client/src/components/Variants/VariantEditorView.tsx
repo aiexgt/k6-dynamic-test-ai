@@ -378,7 +378,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 space-y-6 pb-28">
       {/* Top Sticky Bar */}
-      <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md py-3.5 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between gap-4 -mx-4 sm:-mx-6 px-4 sm:px-6 lg:-mx-8 lg:px-8 transition-colors shadow-xs">
+      <div className="sticky top-0 z-30 bg-slate-50/95 dark:bg-slate-950/95 backdrop-blur-md py-3.5 border-b border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 -mx-4 sm:-mx-6 px-4 sm:px-6 lg:-mx-8 lg:px-8 transition-colors shadow-xs">
         <div className="flex items-center gap-3 min-w-0">
           <button
             type="button"
@@ -395,7 +395,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           <button
             type="button"
             onClick={() => setIsTesterOpen(true)}
@@ -1002,7 +1002,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       </form>
 
       {/* Floating Action Dock */}
-      <div className="fixed bottom-6 right-6 md:right-10 z-40 flex items-center gap-2 p-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
+      <div className="fixed bottom-4 sm:bottom-6 right-4 sm:right-10 z-40 max-w-[calc(100vw-2rem)] flex flex-wrap items-center gap-2 p-1.5 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md border border-slate-200 dark:border-slate-800 shadow-2xl rounded-2xl animate-in fade-in slide-in-from-bottom-2 duration-200">
         <button
           type="button"
           onClick={onBack}

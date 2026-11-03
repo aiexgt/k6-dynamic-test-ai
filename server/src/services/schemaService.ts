@@ -44,16 +44,29 @@ export class SchemaService {
   static resolveHeaders(environment?: Environment | null, settings?: EnvironmentSettings | null, customHeaders?: Record<string, string>): Record<string, string> {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      'Accept': 'application/json',
-      ...(settings?.customHeaders || {}),
-      ...(environment?.customHeaders || {}),
-      ...(customHeaders || {})
+      'Accept': 'application/json'
     };
+
+    const applyHeaders = (rawHeaders?: Record<string, any>) => {
+      if (!rawHeaders || typeof rawHeaders !== 'object') return;
+      for (const [k, v] of Object.entries(rawHeaders)) {
+        if (typeof v === 'object' && v !== null && ('value' in v || 'graphql' in v)) {
+          if ((v as any).graphql !== false) {
+            headers[k] = String((v as any).value !== undefined ? (v as any).value : '');
+          }
+        } else if (v !== undefined && v !== null) {
+          headers[k] = String(v);
+        }
+      }
+    };
+
+    applyHeaders(settings?.customHeaders);
+    applyHeaders(environment?.customHeaders);
+    applyHeaders(customHeaders);
 
     // Customer Token / Auth
     const token = environment?.variables?.customerToken ||
-      environment?.variables?.token ||
-      settings?.customHeaders?.Authorization;
+      environment?.variables?.token;
 
     if (token && !headers['Authorization'] && !headers['authorization']) {
       headers['Authorization'] = token.startsWith('Bearer ') ? token : `Bearer ${token}`;

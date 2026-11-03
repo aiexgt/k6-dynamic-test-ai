@@ -518,15 +518,51 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setIsSaveModalOpen(true);
   };
 
+  const updateUrlVariant = (variantId: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (variantId) {
+      url.searchParams.set('variant', variantId);
+    } else {
+      url.searchParams.delete('variant');
+    }
+    if (window.location.pathname + window.location.search !== url.pathname + url.search) {
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+  };
+
   // Direct Variant Editing from step
-  const handleEditVariantFromStep = (variantId: string) => {
+  const handleEditVariantFromStep = (variantId: string, updateUrl = true) => {
     const found = variants.find(v => v.id === variantId);
     if (found) {
       setEditingVariant(found);
+      if (updateUrl) updateUrlVariant(variantId);
     } else {
       toast('No se encontró la variante seleccionada', 'error');
     }
   };
+
+  const handleCloseVariantEditor = () => {
+    setEditingVariant(null);
+    updateUrlVariant(null);
+  };
+
+  // Sync variant query param on mount/popstate
+  useEffect(() => {
+    const handlePopState = () => {
+      if (typeof window === 'undefined') return;
+      const vId = new URLSearchParams(window.location.search).get('variant');
+      if (vId) {
+        const found = variants.find(v => v.id === vId);
+        if (found) setEditingVariant(found);
+      } else if (editingVariant) {
+        setEditingVariant(null);
+      }
+    };
+    handlePopState();
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [variants, editingVariant?.id]);
 
   const handleSaveVariantFromEditor = async (variantData: Partial<Variant>) => {
     if (!editingVariant) return;
@@ -534,7 +570,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       const updated = await api.updateVariant(editingVariant.id, variantData);
       setVariants(prev => prev.map(v => (v.id === updated.id ? updated : v)));
       toast(`Variante "${updated.name}" actualizada con éxito`, 'success');
-      setEditingVariant(null);
+      handleCloseVariantEditor();
     } catch (err: any) {
       toast(`Error al actualizar variante: ${err.message}`, 'error');
     }
@@ -679,7 +715,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         categories={categories}
         defaultCategory={editingVariant.category || categories[0] || 'Crear Carrito'}
         onSave={handleSaveVariantFromEditor}
-        onBack={() => setEditingVariant(null)}
+        onBack={handleCloseVariantEditor}
         onCreateCategory={handleCreateCategoryFromEditor}
       />
     );
@@ -809,7 +845,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         </div>
 
         {/* Right: Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           {runningStepId && (
             <button
               onClick={handleAbortRunningStep}

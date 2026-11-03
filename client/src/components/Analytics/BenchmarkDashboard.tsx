@@ -15,16 +15,88 @@ export const BenchmarkDashboard: React.FC = () => {
   const { confirm, toast } = useFeedback();
   const [history, setHistory] = useState<FlowExecutionResponse[]>([]);
   const [selectedExecution, setSelectedExecution] = useState<FlowExecutionResponse | null>(null);
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'FLOW' | 'SINGLE'>('ALL');
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'FLOW' | 'SINGLE'>(() => {
+    if (typeof window !== 'undefined') {
+      const t = new URLSearchParams(window.location.search).get('type');
+      if (t === 'FLOW' || t === 'SINGLE' || t === 'ALL') return t;
+    }
+    return 'ALL';
+  });
+
+  const updateUrlExecution = (execId: string | null) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (execId) {
+      url.searchParams.set('execution', execId);
+    } else {
+      url.searchParams.delete('execution');
+    }
+    if (window.location.pathname + window.location.search !== url.pathname + url.search) {
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const handleSelectExecution = (exec: FlowExecutionResponse) => {
+    setSelectedExecution(exec);
+    updateUrlExecution(exec.id || null);
+  };
+
+  const handleCloseExecution = () => {
+    setSelectedExecution(null);
+    updateUrlExecution(null);
+    loadHistory();
+  };
+
+  const handleTypeFilterChange = (filter: 'ALL' | 'FLOW' | 'SINGLE') => {
+    setTypeFilter(filter);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (filter !== 'ALL') url.searchParams.set('type', filter);
+      else url.searchParams.delete('type');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  };
 
   useEffect(() => {
     loadHistory();
   }, []);
 
+  // Sync with URL parameters and popstate
+  useEffect(() => {
+    const handleUrlSync = () => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const execId = params.get('execution');
+      const typeParam = params.get('type') as 'ALL' | 'FLOW' | 'SINGLE' | null;
+      if (typeParam && (typeParam === 'ALL' || typeParam === 'FLOW' || typeParam === 'SINGLE')) {
+        setTypeFilter(typeParam);
+      }
+      if (execId) {
+        const found = history.find(h => h.id === execId);
+        if (found) {
+          setSelectedExecution(found);
+        }
+      } else if (selectedExecution) {
+        setSelectedExecution(null);
+      }
+    };
+
+    handleUrlSync();
+    window.addEventListener('popstate', handleUrlSync);
+    return () => window.removeEventListener('popstate', handleUrlSync);
+  }, [history, selectedExecution?.id]);
+
   const loadHistory = async () => {
     try {
       const data = await api.getHistory();
       setHistory(data);
+      if (typeof window !== 'undefined') {
+        const execId = new URLSearchParams(window.location.search).get('execution');
+        if (execId) {
+          const found = data.find(h => h.id === execId);
+          if (found) setSelectedExecution(found);
+        }
+      }
     } catch (err) {
       console.error('Error loading history:', err);
     }
@@ -42,7 +114,7 @@ export const BenchmarkDashboard: React.FC = () => {
     try {
       await api.clearHistory();
       setHistory([]);
-      setSelectedExecution(null);
+      handleCloseExecution();
       toast('Historial vaciado', 'success');
     } catch (err: any) {
       toast(`Error: ${err.message}`, 'error');
@@ -54,10 +126,7 @@ export const BenchmarkDashboard: React.FC = () => {
     return (
       <ExecutionDetailView
         execution={selectedExecution}
-        onBack={() => {
-          setSelectedExecution(null);
-          loadHistory();
-        }}
+        onBack={handleCloseExecution}
       />
     );
   }
@@ -104,7 +173,7 @@ export const BenchmarkDashboard: React.FC = () => {
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">
             Métricas &amp; Historial de Peticiones
@@ -115,7 +184,7 @@ export const BenchmarkDashboard: React.FC = () => {
           {/* Filter Type */}
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
             <button
-              onClick={() => setTypeFilter('ALL')}
+              onClick={() => handleTypeFilterChange('ALL')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
                 typeFilter === 'ALL'
                   ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 shadow-xs'
@@ -125,7 +194,7 @@ export const BenchmarkDashboard: React.FC = () => {
               Todas ({history.length})
             </button>
             <button
-              onClick={() => setTypeFilter('FLOW')}
+              onClick={() => handleTypeFilterChange('FLOW')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
                 typeFilter === 'FLOW'
                   ? 'bg-purple-600 text-white shadow-xs'
@@ -135,7 +204,7 @@ export const BenchmarkDashboard: React.FC = () => {
               Flujos
             </button>
             <button
-              onClick={() => setTypeFilter('SINGLE')}
+              onClick={() => handleTypeFilterChange('SINGLE')}
               className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
                 typeFilter === 'SINGLE'
                   ? 'bg-blue-600 text-white shadow-xs'
@@ -252,7 +321,7 @@ export const BenchmarkDashboard: React.FC = () => {
                   return (
                     <tr
                       key={run.id || Math.random()}
-                      onClick={() => setSelectedExecution(run)}
+                      onClick={() => handleSelectExecution(run)}
                       className="hover:bg-slate-50 dark:hover:bg-slate-800/40 cursor-pointer transition-colors"
                     >
                       <td className="px-4 py-3">
@@ -328,7 +397,7 @@ export const BenchmarkDashboard: React.FC = () => {
                         <button
                           onClick={e => {
                             e.stopPropagation();
-                            setSelectedExecution(run);
+                            handleSelectExecution(run);
                           }}
                           className="p-1 rounded-lg text-slate-400 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20"
                           title="Ver detalle completo"

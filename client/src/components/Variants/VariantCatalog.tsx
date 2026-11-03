@@ -66,12 +66,116 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
   const [variants, setVariants] = useState<Variant[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>('ALL');
-  const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('category') || 'ALL';
+    }
+    return 'ALL';
+  });
+  const [searchTerm, setSearchTerm] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return new URLSearchParams(window.location.search).get('search') || '';
+    }
+    return '';
+  });
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
   const [editingInitialCategory, setEditingInitialCategory] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const updateUrl = (variantId?: string | null, catFilter?: string, search?: string) => {
+    if (typeof window === 'undefined') return;
+    const url = new URL(window.location.href);
+    if (variantId !== undefined) {
+      if (variantId) url.searchParams.set('variant', variantId);
+      else url.searchParams.delete('variant');
+    }
+    if (catFilter !== undefined) {
+      if (catFilter && catFilter !== 'ALL') url.searchParams.set('category', catFilter);
+      else url.searchParams.delete('category');
+    }
+    if (search !== undefined) {
+      if (search) url.searchParams.set('search', search);
+      else url.searchParams.delete('search');
+    }
+    if (window.location.pathname + window.location.search !== url.pathname + url.search) {
+      window.history.pushState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    if (typeof window !== 'undefined') {
+      const url = new URL(window.location.href);
+      if (val) url.searchParams.set('search', val);
+      else url.searchParams.delete('search');
+      window.history.replaceState(null, '', url.pathname + url.search);
+    }
+  };
+
+  const handleCategoryFilterChange = (cat: string) => {
+    setSelectedCategoryFilter(cat);
+    updateUrl(undefined, cat);
+  };
+
+  const handleCreate = (category?: string, updateHistory = true) => {
+    setEditingVariant(null);
+    setEditingInitialCategory(category || null);
+    setIsEditorOpen(true);
+    if (updateHistory) updateUrl('new', category);
+  };
+
+  const handleEdit = (variant: Variant, updateHistory = true) => {
+    setEditingVariant(variant);
+    setIsEditorOpen(true);
+    if (updateHistory) updateUrl(variant.id);
+  };
+
+  const handleCloseEditor = () => {
+    setIsEditorOpen(false);
+    setEditingVariant(null);
+    setEditingInitialCategory(null);
+    updateUrl(null);
+  };
+
+  // URL synchronization on mount and on popstate (Back/Forward)
+  useEffect(() => {
+    const handleUrlSync = () => {
+      if (typeof window === 'undefined') return;
+      const params = new URLSearchParams(window.location.search);
+      const variantParam = params.get('variant');
+      const catParam = params.get('category');
+      const searchParam = params.get('search');
+
+      if (catParam && catParam !== selectedCategoryFilter) {
+        setSelectedCategoryFilter(catParam);
+      }
+      if (searchParam !== null && searchParam !== searchTerm) {
+        setSearchTerm(searchParam);
+      }
+
+      if (variantParam === 'new') {
+        if (!isEditorOpen || editingVariant) {
+          handleCreate(catParam || undefined, false);
+        }
+      } else if (variantParam) {
+        if (variants.length > 0) {
+          const found = variants.find(v => v.id === variantParam);
+          if (found && (!isEditorOpen || editingVariant?.id !== found.id)) {
+            handleEdit(found, false);
+          }
+        }
+      } else if (!variantParam && isEditorOpen) {
+        setIsEditorOpen(false);
+        setEditingVariant(null);
+        setEditingInitialCategory(null);
+      }
+    };
+
+    handleUrlSync();
+    window.addEventListener('popstate', handleUrlSync);
+    return () => window.removeEventListener('popstate', handleUrlSync);
+  }, [variants, isEditorOpen, editingVariant?.id, selectedCategoryFilter, searchTerm]);
 
   // View preferences
   const [viewMode, setViewMode] = useState<'list' | 'cards'>(() => {
@@ -107,6 +211,16 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
       setVariants(vList);
       setCategories(catList);
       setEnvironments(envList);
+
+      if (typeof window !== 'undefined') {
+        const vParam = new URLSearchParams(window.location.search).get('variant');
+        if (vParam === 'new') {
+          handleCreate(undefined, false);
+        } else if (vParam) {
+          const found = vList.find(v => v.id === vParam);
+          if (found) handleEdit(found, false);
+        }
+      }
     } catch (err) {
       console.error('Error fetching variants:', err);
     }
@@ -184,17 +298,6 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     setExpandedPreviewIds(prev => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const handleCreate = (category?: string) => {
-    setEditingVariant(null);
-    setEditingInitialCategory(category || null);
-    setIsEditorOpen(true);
-  };
-
-  const handleEdit = (variant: Variant) => {
-    setEditingVariant(variant);
-    setIsEditorOpen(true);
-  };
-
   const handleClone = async (id: string) => {
     try {
       const cloned = await api.cloneVariant(id);
@@ -244,8 +347,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
         setVariants(prev => [...prev, created]);
         toast('Variante creada con éxito', 'success');
       }
-      setIsEditorOpen(false);
-      setEditingVariant(null);
+      handleCloseEditor();
       loadData();
     } catch (err: any) {
       toast(`Error guardando: ${err.message}`, 'error');
@@ -310,11 +412,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
           editingInitialCategory || (selectedCategoryFilter !== 'ALL' ? selectedCategoryFilter : categories[0] || 'Crear Carrito')
         }
         onSave={handleSaveEditor}
-        onBack={() => {
-          setIsEditorOpen(false);
-          setEditingVariant(null);
-          setEditingInitialCategory(null);
-        }}
+        onBack={handleCloseEditor}
         onCreateCategory={handleCreateCategory}
       />
     );
@@ -323,7 +421,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between gap-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
           <span>Catálogo de Variantes</span>
           <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
@@ -347,13 +445,13 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
           <input
             type="text"
             value={searchTerm}
-            onChange={e => setSearchTerm(e.target.value)}
+            onChange={e => handleSearchChange(e.target.value)}
             placeholder="Buscar por nombre, query, categoría o variables..."
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-8 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-orange-500 transition-colors shadow-sm"
           />
           {searchTerm && (
             <button
-              onClick={() => setSearchTerm('')}
+              onClick={() => handleSearchChange('')}
               className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 rounded text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               title="Limpiar búsqueda"
             >
@@ -363,10 +461,10 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
         </div>
 
         {/* Category Select Filter */}
-        <div className="w-full sm:w-64">
+        <div className="w-full sm:w-64 min-w-0">
           <select
             value={selectedCategoryFilter}
-            onChange={e => setSelectedCategoryFilter(e.target.value)}
+            onChange={e => handleCategoryFilterChange(e.target.value)}
             className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500 shadow-sm cursor-pointer"
           >
             <option value="ALL">Todas las Categorías ({variants.length})</option>

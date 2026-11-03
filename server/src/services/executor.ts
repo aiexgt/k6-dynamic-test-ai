@@ -450,21 +450,46 @@ export class FlowExecutionService {
       if ('CartId' in processedVariables) processedVariables.CartId = resolvedCartId;
     }
 
+    // Determinar si es REST API o GraphQL
+    const isRest = (step.apiType || variant.apiType) === 'REST';
+    const restMethod = ((step.method || variant.method) || 'POST').toUpperCase();
+    const effectiveEndpoint = step.endpoint !== undefined ? step.endpoint : variant.endpoint;
+
     // Headers
     const headers: Record<string, string> = {
       'Content-Type': 'application/json'
     };
 
     if (effectiveSettings.customHeaders && typeof effectiveSettings.customHeaders === 'object') {
-      for (const [key, value] of Object.entries(effectiveSettings.customHeaders)) {
-        if (value !== undefined && value !== null) {
-          headers[key] = interpolateString(String(value), allContextVars);
+      for (const [key, rawVal] of Object.entries(effectiveSettings.customHeaders)) {
+        if (rawVal !== undefined && rawVal !== null) {
+          let headerVal = '';
+          let appliesToGql = true;
+          let appliesToRest = true;
+
+          if (typeof rawVal === 'object' && rawVal !== null && ('value' in rawVal || 'graphql' in rawVal || 'rest' in rawVal)) {
+            headerVal = String((rawVal as any).value !== undefined ? (rawVal as any).value : '');
+            appliesToGql = (rawVal as any).graphql !== false;
+            appliesToRest = (rawVal as any).rest !== false;
+          } else {
+            headerVal = String(rawVal);
+          }
+
+          // Filtrar según el tipo de petición actual
+          if (isRest && !appliesToRest) {
+            continue;
+          }
+          if (!isRest && !appliesToGql) {
+            continue;
+          }
+
+          headers[key] = interpolateString(headerVal, allContextVars);
         }
       }
     }
 
-    // Inyectar Authorization Bearer token si está disponible
-    if (resolvedToken) {
+    // Inyectar Authorization Bearer token si está disponible y no fue definido en customHeaders
+    if (resolvedToken && !headers['Authorization'] && !headers['authorization']) {
       headers['Authorization'] = `Bearer ${resolvedToken}`;
     }
 
@@ -478,11 +503,6 @@ export class FlowExecutionService {
         headers[key] = interpolateString(String(value), allContextVars);
       }
     }
-
-    // Determinar si es REST API o GraphQL
-    const isRest = (step.apiType || variant.apiType) === 'REST';
-    const restMethod = ((step.method || variant.method) || 'POST').toUpperCase();
-    const effectiveEndpoint = step.endpoint !== undefined ? step.endpoint : variant.endpoint;
 
     // Determinar URL de destino según API (GraphQL vs REST) y el environment activo/asignado
     const baseApiUrl = isRest

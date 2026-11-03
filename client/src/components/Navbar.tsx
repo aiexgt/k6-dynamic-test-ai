@@ -65,9 +65,9 @@ export const Navbar: React.FC<NavbarProps> = ({
 
   return (
     <header className="border-b border-slate-200 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur sticky top-0 z-40 transition-colors">
-      <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between gap-4">
+      <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 min-h-14 py-2 flex flex-wrap items-center justify-between gap-3">
         {/* Brand & Tabs */}
-        <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto py-1">
+        <div className="flex items-center gap-3 sm:gap-4 overflow-x-auto py-1 max-w-full">
           <div className="flex items-center gap-2 flex-shrink-0">
             <div className="w-7 h-7 rounded-lg bg-orange-600 flex items-center justify-center text-white font-black text-xs">
               M2
@@ -166,7 +166,7 @@ export const Navbar: React.FC<NavbarProps> = ({
         </div>
 
         {/* Right Actions: Environment Selector with Search, Trash, User Profile & Theme */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
           {/* Environment Searchable Select */}
           <div className="w-44 sm:w-52 relative">
             <SearchableSelect

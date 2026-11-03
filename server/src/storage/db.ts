@@ -1169,7 +1169,16 @@ export class Database {
       const otherHeaders = { ...(otherEnv.customHeaders || {}) };
       for (const hk of newHeaderKeys) {
         if (!(hk in otherHeaders)) {
-          otherHeaders[hk] = '';
+          const finalVal = (finalEnv.customHeaders || {})[hk];
+          if (typeof finalVal === 'object' && finalVal !== null) {
+            otherHeaders[hk] = {
+              value: '',
+              graphql: (finalVal as any).graphql !== false,
+              rest: (finalVal as any).rest !== false
+            };
+          } else {
+            otherHeaders[hk] = '';
+          }
           modifiedOther = true;
         }
       }
