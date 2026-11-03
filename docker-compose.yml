@@ -41,8 +41,7 @@ services:
       - NODE_TLS_REJECT_UNAUTHORIZED=0
     extra_hosts:
       - "host.docker.internal:host-gateway"
-      - "app.kosmos.test:host-gateway"
-      - "staging.kosmos.test:host-gateway"
+      - "${LOCAL_DOMAIN:-app.kosmos.test}:host-gateway"
     depends_on:
       db:
         condition: service_healthy
