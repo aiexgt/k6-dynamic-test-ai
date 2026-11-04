@@ -218,14 +218,20 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
     setExecutingFlow(flow);
   };
 
-  const filteredFlows = flows.filter(flow => {
-    if (!searchTerm.trim()) return true;
-    const term = searchTerm.toLowerCase();
-    const nameMatch = flow.name.toLowerCase().includes(term);
-    const descMatch = (flow.description || '').toLowerCase().includes(term);
-    const categoryMatch = (flow.steps || []).some(s => (s.category || '').toLowerCase().includes(term));
-    return nameMatch || descMatch || categoryMatch;
-  });
+  const filteredFlows = flows
+    .filter(flow => {
+      if (!searchTerm.trim()) return true;
+      const term = searchTerm.toLowerCase();
+      const nameMatch = flow.name.toLowerCase().includes(term);
+      const descMatch = (flow.description || '').toLowerCase().includes(term);
+      const categoryMatch = (flow.steps || []).some(s => (s.category || '').toLowerCase().includes(term));
+      return nameMatch || descMatch || categoryMatch;
+    })
+    .sort((a, b) => {
+      const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+      const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+      return dateB - dateA;
+    });
 
   const paginatedFlows = filteredFlows.slice((flowPage - 1) * flowPageSize, flowPage * flowPageSize);
 

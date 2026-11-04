@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, CopyPlus, Search, X, ShieldAlert } from 'lucide-react';
+import { Server, Plus, Edit2, Trash2, CheckCircle2, ArrowLeft, Save, Variable, CopyPlus, Search, X, ShieldAlert, Download, CheckSquare, Square } from 'lucide-react';
 import { Environment } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 import { api } from '../../api';
 import { Pagination } from '../common/Pagination';
+import { downloadJson, sanitizeFilename } from '../../utils/fileTransfer';
 
 interface HeaderRow {
   id: string;
@@ -49,6 +50,40 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
   const [variableRows, setVariableRows] = useState<VariableRow[]>([]);
   const [envPage, setEnvPage] = useState(1);
   const [envPageSize, setEnvPageSize] = useState(9);
+  const [selectedEnvIds, setSelectedEnvIds] = useState<string[]>([]);
+
+  const handleToggleSelectEnv = (envId: string) => {
+    setSelectedEnvIds(prev =>
+      prev.includes(envId) ? prev.filter(id => id !== envId) : [...prev, envId]
+    );
+  };
+
+  const handleSelectAllVisible = (visibleEnvs: Environment[]) => {
+    const visibleIds = visibleEnvs.map(e => e.id);
+    const allSelected = visibleIds.every(id => selectedEnvIds.includes(id));
+    if (allSelected) {
+      setSelectedEnvIds(prev => prev.filter(id => !visibleIds.includes(id)));
+    } else {
+      setSelectedEnvIds(prev => Array.from(new Set([...prev, ...visibleIds])));
+    }
+  };
+
+  const handleExportSelected = () => {
+    const toExport = environments.filter(e => selectedEnvIds.includes(e.id));
+    if (toExport.length === 0) {
+      toast('Selecciona al menos un entorno para exportar marcando su casilla', 'info');
+      return;
+    }
+    const filename = `entornos-seleccionados-${toExport.length}.json`;
+    downloadJson(filename, { environments: toExport });
+    toast(`Exportados ${toExport.length} entornos seleccionados`, 'success');
+  };
+
+  const handleExportSingle = (env: Environment) => {
+    const filename = `entorno-${sanitizeFilename(env.name)}.json`;
+    downloadJson(filename, env);
+    toast(`Entorno "${env.name}" exportado`, 'success');
+  };
 
   const updateUrlEnv = (envParam: string | null) => {
     if (typeof window === 'undefined') return;
@@ -694,35 +729,83 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
           </h1>
         </div>
 
-        <button
-          onClick={() => handleStartCreate(true)}
-          className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm transition-all"
-        >
-          <Plus className="w-3.5 h-3.5" />
-          <span>Nuevo Entorno</span>
-        </button>
-      </div>
-
-      {/* Buscador de Entornos */}
-      {environments.length > 0 && (
-        <div className="relative w-full">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={e => handleSearchChange(e.target.value)}
-            placeholder="Buscar entornos por nombre, URL de GraphQL o endpoint REST..."
-            className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-orange-500 transition-colors shadow-xs"
-          />
-          {searchTerm && (
+        <div className="flex items-center gap-2">
+          {environments.length > 0 && (
             <button
-              onClick={() => handleSearchChange('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
-              title="Limpiar búsqueda"
+              onClick={handleExportSelected}
+              disabled={selectedEnvIds.length === 0}
+              className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+                selectedEnvIds.length > 0
+                  ? 'bg-orange-500/10 border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold hover:bg-orange-500/20'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed opacity-60'
+              }`}
+              title={
+                selectedEnvIds.length > 0
+                  ? `Exportar los ${selectedEnvIds.length} entornos seleccionados`
+                  : 'Selecciona entornos con las casillas para exportar'
+              }
             >
-              <X className="w-3.5 h-3.5" />
+              <Download className="w-3.5 h-3.5" />
+              <span>
+                {selectedEnvIds.length > 0
+                  ? `Exportar (${selectedEnvIds.length})`
+                  : 'Exportar seleccionados'}
+              </span>
             </button>
           )}
+
+          <button
+            onClick={() => handleStartCreate(true)}
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold shadow-sm transition-all"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Nuevo Entorno</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Buscador de Entornos y Barra de Selección */}
+      {environments.length > 0 && (
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+          <div className="relative flex-1">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={e => handleSearchChange(e.target.value)}
+              placeholder="Buscar entornos por nombre, URL de GraphQL o endpoint REST..."
+              className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl pl-9 pr-9 py-2 text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:outline-none focus:border-orange-500 transition-colors shadow-xs"
+            />
+            {searchTerm && (
+              <button
+                onClick={() => handleSearchChange('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                title="Limpiar búsqueda"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={() => handleSelectAllVisible(filteredEnvironments)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:bg-slate-50 dark:hover:bg-slate-800 text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors shadow-xs"
+              title="Marcar o desmarcar todos los entornos visibles"
+            >
+              {filteredEnvironments.length > 0 && filteredEnvironments.every(e => selectedEnvIds.includes(e.id)) ? (
+                <>
+                  <CheckSquare className="w-3.5 h-3.5 text-orange-500" />
+                  <span>Deseleccionar todos</span>
+                </>
+              ) : (
+                <>
+                  <Square className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Seleccionar todos ({filteredEnvironments.length})</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       )}
 
@@ -744,6 +827,7 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {paginatedEnvironments.map(env => {
             const isActive = env.id === activeEnvironmentId;
+            const isChecked = selectedEnvIds.includes(env.id);
             const headerCount = Object.keys(env.customHeaders || {}).length;
             const varCount = Object.keys(env.variables || {}).length;
 
@@ -751,53 +835,72 @@ export const EnvironmentsView: React.FC<EnvironmentsViewProps> = ({
               <div
                 key={env.id}
                 className={`p-4 rounded-2xl border transition-all ${
-                  isActive
+                  isChecked
+                    ? 'border-orange-500/70 bg-orange-50/30 dark:bg-orange-950/20 shadow-sm ring-2 ring-orange-500/30'
+                    : isActive
                     ? 'border-orange-500 bg-orange-50/20 dark:bg-orange-950/10 shadow-sm ring-1 ring-orange-500/30'
                     : 'border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-slate-300 dark:hover:border-slate-700'
                 }`}
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="space-y-1 flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
-                        {env.name}
-                      </span>
-                      {isActive && (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30">
-                          <CheckCircle2 className="w-3 h-3" />
-                          Activo
+                <div className="flex items-start justify-between gap-2.5">
+                  <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleToggleSelectEnv(env.id)}
+                      className="mt-1 w-4 h-4 rounded border-slate-300 dark:border-slate-700 text-orange-600 focus:ring-orange-500 cursor-pointer shrink-0"
+                      title="Seleccionar para exportar"
+                    />
+
+                    <div className="space-y-1 flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-sm text-slate-900 dark:text-slate-100">
+                          {env.name}
                         </span>
-                      )}
-                      {env.useMockSimulator && (
-                        <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
-                          Mock
-                        </span>
-                      )}
-                      {env.isProtected && (
-                        <span
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
-                          title={env.securityCode ? 'Protegido con código PIN' : `Protegido con nombre: "${env.name}"`}
-                        >
-                          <ShieldAlert className="w-3 h-3 text-amber-500" />
-                          <span>Protegido</span>
-                        </span>
-                      )}
-                    </div>
-                    <div className="space-y-0.5 mt-1">
-                      <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded shrink-0">GraphQL</span>
-                        <span className="truncate">{env.magentoUrl}</span>
-                      </p>
-                      {env.magentoRestUrl && (
+                        {isActive && (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-orange-500/15 text-orange-600 dark:text-orange-400 border border-orange-500/30">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Activo
+                          </span>
+                        )}
+                        {env.useMockSimulator && (
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20">
+                            Mock
+                          </span>
+                        )}
+                        {env.isProtected && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30"
+                            title={env.securityCode ? 'Protegido con código PIN' : `Protegido con nombre: "${env.name}"`}
+                          >
+                            <ShieldAlert className="w-3 h-3 text-amber-500" />
+                            <span>Protegido</span>
+                          </span>
+                        )}
+                      </div>
+                      <div className="space-y-0.5 mt-1">
                         <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded shrink-0">REST</span>
-                          <span className="truncate">{env.magentoRestUrl}</span>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-orange-500 bg-orange-500/10 px-1 rounded shrink-0">GraphQL</span>
+                          <span className="truncate">{env.magentoUrl}</span>
                         </p>
-                      )}
+                        {env.magentoRestUrl && (
+                          <p className="text-[11px] font-mono text-slate-500 dark:text-slate-400 truncate flex-1 min-w-0 flex items-center gap-1.5">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-blue-500 bg-blue-500/10 px-1 rounded shrink-0">REST</span>
+                            <span className="truncate">{env.magentoRestUrl}</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      onClick={() => handleExportSingle(env)}
+                      className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-orange-500 dark:hover:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors"
+                      title="Exportar este entorno a JSON"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
                     <button
                       onClick={() => handleStartEdit(env)}
                       className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

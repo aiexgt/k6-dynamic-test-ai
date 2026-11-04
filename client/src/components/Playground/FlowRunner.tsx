@@ -218,8 +218,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         if (initialFlow) {
           applySavedFlow(initialFlow, vList);
         } else if (fList.length > 0) {
-          applySavedFlow(fList[0], vList);
-          setSelectedFlowId(fList[0].id);
+          const lastId = typeof window !== 'undefined' ? localStorage.getItem('flowrunner_last_flow_id') : null;
+          const foundLast = lastId ? fList.find(f => f.id === lastId) : null;
+          const flowToLoad = foundLast || fList[0];
+          applySavedFlow(flowToLoad, vList);
+          setSelectedFlowId(flowToLoad.id);
         } else {
           initInitialSteps(vList, catList);
         }
@@ -296,6 +299,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     });
     setRawJsonOverrides(overridesMap);
     setSavedSnapshot(serializeFlowState(normalized, flow.dataset));
+    if (typeof window !== 'undefined' && flow.id) {
+      localStorage.setItem('flowrunner_last_flow_id', flow.id);
+    }
     onFlowChange?.(flow.id);
     resetRunState();
   };
@@ -313,6 +319,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   };
 
   const handleStartNewFlow = () => {
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('flowrunner_last_flow_id');
+    }
     setSelectedFlowId('');
     setSteps([]);
     setDataset(undefined);
@@ -326,7 +335,15 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const handleSelectFlow = (flowId: string) => {
     setSelectedFlowId(flowId);
     onFlowChange?.(flowId);
-    if (!flowId) return;
+    if (!flowId) {
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('flowrunner_last_flow_id');
+      }
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('flowrunner_last_flow_id', flowId);
+    }
     const found = savedFlows.find(f => f.id === flowId);
     if (found) {
       applySavedFlow(found);
@@ -484,6 +501,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       });
       setSavedFlows(prev => prev.map(f => (f.id === updated.id ? updated : f)));
       setSelectedFlowId(updated.id);
+      if (typeof window !== 'undefined' && updated.id) {
+        localStorage.setItem('flowrunner_last_flow_id', updated.id);
+      }
       setSavedSnapshot(serializeFlowState(steps, dataset));
       onFlowChange?.(updated.id);
       toast(`¡Flujo "${updated.name}" guardado con éxito!`, 'success');
@@ -502,6 +522,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       const created = await api.createFlow({ name, description, steps, dataset });
       setSavedFlows(prev => [...prev, created]);
       setSelectedFlowId(created.id);
+      if (typeof window !== 'undefined' && created.id) {
+        localStorage.setItem('flowrunner_last_flow_id', created.id);
+      }
       setSavedSnapshot(serializeFlowState(steps, dataset));
       onFlowChange?.(created.id);
       toast(`¡Flujo "${created.name}" guardado como nuevo!`, 'success');
@@ -705,7 +728,13 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const categoryOptions = categories.map(c => ({ value: c, label: c }));
   const flowOptions = [
     { value: '', label: 'Flujo Personalizado (Sin guardar)' },
-    ...savedFlows.map(f => ({ value: f.id, label: f.name, sublabel: f.description }))
+    ...[...savedFlows]
+      .sort((a, b) => {
+        const dateA = new Date(a.updatedAt || a.createdAt || 0).getTime();
+        const dateB = new Date(b.updatedAt || b.createdAt || 0).getTime();
+        return dateB - dateA;
+      })
+      .map(f => ({ value: f.id, label: f.name, sublabel: f.description }))
   ];
 
   if (editingVariant) {
@@ -724,127 +753,92 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
       {/* Control Bar */}
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-3.5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition-colors">
-        {/* Left: Load Saved Flow & Add Step */}
-        <div className="flex flex-wrap items-center gap-2">
-          {savedFlows.length > 0 && (
-            <div className="w-52">
-              <SearchableSelect
-                options={flowOptions}
-                value={selectedFlowId}
-                onChange={handleSelectFlow}
-                placeholder="Cargar flujo guardado..."
-              />
-            </div>
-          )}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm space-y-3 transition-colors">
+        {/* Row 1: Selector de Flujo a Ancho Completo */}
+        {savedFlows.length > 0 && (
+          <div className="w-full">
+            <SearchableSelect
+              options={flowOptions}
+              value={selectedFlowId}
+              onChange={handleSelectFlow}
+              placeholder="Seleccionar o buscar un flujo guardado..."
+              className="w-full"
+            />
+          </div>
+        )}
 
-          <button
-            onClick={handleStartNewFlow}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
-            title="Limpiar playground e iniciar un nuevo flujo"
-          >
-            <FilePlus className="w-3.5 h-3.5 text-orange-500" />
-            <span>Iniciar nuevo flujo</span>
-          </button>
-
-          <button
-            onClick={() => handleAddStep()}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-sm"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            <span>Agregar Paso</span>
-          </button>
-
-          {/* Unificado: Un solo botón de Guardar con indicador de cambios sin guardar */}
-          <button
-            onClick={handleSaveClick}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm ${
-              hasUnsavedChanges
-                ? 'bg-orange-600 hover:bg-orange-700 text-white ring-2 ring-orange-500/30'
-                : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
-            }`}
-            title={
-              hasUnsavedChanges
-                ? 'Hay cambios sin guardar. Haz clic para guardar.'
-                : 'Todos los cambios están guardados'
-            }
-          >
-            {hasUnsavedChanges ? (
-              <>
-                <span className="w-2 h-2 rounded-full bg-amber-300 animate-pulse" />
-                <Save className="w-3.5 h-3.5" />
-                <span>Guardar</span>
-              </>
-            ) : (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-500" />
-                <span>Guardado</span>
-              </>
-            )}
-          </button>
-
-          {/* Badge de estado de cambios */}
-          {activeFlow && (
-            <span
-              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-semibold border transition-all ${
-                hasUnsavedChanges
-                  ? 'bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/30'
-                  : 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/30'
-              }`}
-            >
-              {hasUnsavedChanges ? (
-                <>
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                  <span>Sin guardar</span>
-                </>
-              ) : (
-                <>
-                  <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
-                  <span>Guardado</span>
-                </>
-              )}
-            </span>
-          )}
-
-          {activeFlow && (
+        {/* Row 2: Action Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80">
+          {/* Left Actions: Flow & Step Management */}
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={() => setIsVersionModalOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors shadow-xs"
-              title="Historial de versiones y rollback"
+              onClick={handleStartNewFlow}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
+              title="Limpiar playground e iniciar un nuevo flujo"
             >
-              <History className="w-3.5 h-3.5 text-orange-500" />
-              <span>Versiones</span>
+              <FilePlus className="w-3.5 h-3.5 text-orange-500" />
+              <span>Iniciar nuevo flujo</span>
             </button>
-          )}
 
-          {/* Botón Matriz CSV / Dataset */}
-          <button
-            onClick={() => setIsDatasetModalOpen(true)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
-              dataset && dataset.rows && dataset.rows.length > 0
-                ? 'bg-orange-500/10 border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold'
-                : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-            }`}
-            title="Configurar matriz de datos o subir archivo CSV"
-          >
-            <FileSpreadsheet className="w-3.5 h-3.5 text-orange-500" />
-            <span>
-              {dataset && dataset.rows && dataset.rows.length > 0
-                ? `CSV (${dataset.rows.length} Filas)`
-                : 'Matriz CSV'}
-            </span>
-          </button>
+            <button
+              onClick={() => handleAddStep()}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-sm"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Agregar Paso</span>
+            </button>
 
-          <button
-            onClick={resetRunState}
-            className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-            title="Reiniciar ejecución"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-          </button>
-        </div>
+            {/* Botón de Cambios sin guardar: sólo visible cuando hay cambios sin guardar */}
+            {hasUnsavedChanges && (
+              <button
+                onClick={handleSaveClick}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold transition-all shadow-sm ring-2 ring-amber-400/30 animate-pulse"
+                title="Hay cambios sin guardar. Haz clic para guardar el flujo."
+              >
+                <Save className="w-3.5 h-3.5" />
+                <span>Cambios sin guardar</span>
+              </button>
+            )}
 
-        {/* Right: Actions */}
+            {activeFlow && (
+              <button
+                onClick={() => setIsVersionModalOpen(true)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors shadow-xs"
+                title="Historial de versiones y rollback"
+              >
+                <History className="w-3.5 h-3.5 text-orange-500" />
+                <span>Versiones</span>
+              </button>
+            )}
+
+            {/* Botón Matriz CSV / Dataset */}
+            <button
+              onClick={() => setIsDatasetModalOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+                dataset && dataset.rows && dataset.rows.length > 0
+                  ? 'bg-orange-500/10 border-orange-500/40 text-orange-600 dark:text-orange-400 font-bold'
+                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Configurar matriz de datos o subir archivo CSV"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-orange-500" />
+              <span>
+                {dataset && dataset.rows && dataset.rows.length > 0
+                  ? `CSV (${dataset.rows.length} Filas)`
+                  : 'Matriz CSV'}
+              </span>
+            </button>
+
+            <button
+              onClick={resetRunState}
+              className="p-2 rounded-xl border border-slate-200 dark:border-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              title="Reiniciar ejecución"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Right: Actions */}
         <div className="flex flex-wrap items-center gap-2">
           {runningStepId && (
             <button
@@ -876,6 +870,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Execution Context Mini-bar */}
       {(executionContext.cartId || executionContext.token || executionContext.orderNumber) && (
