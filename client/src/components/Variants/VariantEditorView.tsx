@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical, Sliders, Braces } from 'lucide-react';
 import { Variant, CustomValidation, ValidationType, ApiType, HttpMethod, Environment } from '../../types';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { CodeEditor } from '../common/CodeEditor';
@@ -7,6 +7,7 @@ import { TypedSchemaJsonViewer } from '../common/TypedSchemaJsonViewer';
 import { VariantTesterModal } from './VariantTesterModal';
 import { useFeedback } from '../../context/FeedbackContext';
 import { api } from '../../api';
+import { parseUrlToPathAndParams, buildUrlFromPathAndParams } from '../../utils/urlParams';
 
 interface KeyValueRow {
   id: string;
@@ -46,7 +47,23 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
   const [apiType, setApiType] = useState<ApiType>(initialVariant?.apiType || 'GRAPHQL');
   const [method, setMethod] = useState<HttpMethod>(initialVariant?.method || 'POST');
   const [endpoint, setEndpoint] = useState<string>(initialVariant?.endpoint || '');
+  const [paramsJson, setParamsJson] = useState<string>(() => {
+    return parseUrlToPathAndParams(initialVariant?.endpoint || '').paramsJson;
+  });
+  const [restSubTab, setRestSubTab] = useState<'params' | 'body'>('params');
   const [body, setBody] = useState<string>(initialVariant?.body || '');
+
+  const handleEndpointChange = (newUrl: string) => {
+    setEndpoint(newUrl);
+    const parsed = parseUrlToPathAndParams(newUrl);
+    setParamsJson(parsed.paramsJson);
+  };
+
+  const handleParamsJsonChange = (newJson: string) => {
+    setParamsJson(newJson);
+    const updatedUrl = buildUrlFromPathAndParams(endpoint, newJson);
+    setEndpoint(updatedUrl);
+  };
   const [query, setQuery] = useState('');
   const [defaultVariablesStr, setDefaultVariablesStr] = useState('{}');
   const [contextOutputsStr, setContextOutputsStr] = useState(
@@ -149,7 +166,9 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       setDescription(initialVariant.description || '');
       setApiType(initialVariant.apiType || 'GRAPHQL');
       setMethod(initialVariant.method || 'POST');
-      setEndpoint(initialVariant.endpoint || '');
+      const rawEp = initialVariant.endpoint || '';
+      setEndpoint(rawEp);
+      setParamsJson(parseUrlToPathAndParams(rawEp).paramsJson);
       setBody(initialVariant.body || '');
       setQuery(initialVariant.query || '');
       setDefaultVariablesStr(JSON.stringify(initialVariant.defaultVariables || {}, null, 2));
@@ -680,8 +699,8 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
                   <input
                     type="text"
                     value={endpoint}
-                    onChange={e => setEndpoint(e.target.value)}
-                    placeholder="/rest/default/V1/carts/mine/payment-information o https://api.com/..."
+                    onChange={e => handleEndpointChange(e.target.value)}
+                    placeholder="/rest/default/V1/carts/mine/payment-information?sku=MD2 o https://api.com/..."
                     className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
@@ -690,18 +709,82 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
                 </div>
               </div>
 
-              {method !== 'GET' && (
-                <CodeEditor
-                  label="Cuerpo de la Petición (Payload JSON)"
-                  language="json"
-                  value={body}
-                  onChange={setBody}
-                  compactHeight="130px"
-                  expandedHeight="400px"
-                  defaultExpanded={false}
-                  placeholder={'{\n  "paymentMethod": {\n    "method": "checkmo"\n  }\n}'}
-                />
-              )}
+              {/* Tabs para Parámetros Query (JSON) y Body (JSON) con Sincronización Bidireccional */}
+              <div className="pt-2 border-t border-slate-100 dark:border-slate-800/80">
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2.5">
+                  <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 p-1 rounded-xl text-xs">
+                    <button
+                      type="button"
+                      onClick={() => setRestSubTab('params')}
+                      className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-all ${
+                        restSubTab === 'params'
+                          ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                          : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>Parámetros Query (JSON)</span>
+                      {(() => {
+                        try {
+                          const count = Object.keys(JSON.parse(paramsJson || '{}')).length;
+                          return count > 0 ? (
+                            <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold border border-blue-500/20">
+                              {count}
+                            </span>
+                          ) : null;
+                        } catch {
+                          return null;
+                        }
+                      })()}
+                    </button>
+
+                    {method !== 'GET' && (
+                      <button
+                        type="button"
+                        onClick={() => setRestSubTab('body')}
+                        className={`flex items-center gap-1.5 px-3 py-1 rounded-lg font-bold transition-all ${
+                          restSubTab === 'body'
+                            ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-xs'
+                            : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                        }`}
+                      >
+                        <Braces className="w-3.5 h-3.5" />
+                        <span>Cuerpo / Body (JSON)</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <span className="text-[11px] text-slate-400 italic">
+                    {restSubTab === 'params'
+                      ? 'Sincronizado bidireccionalmente con los parámetros ?key=value de la URL'
+                      : 'Payload JSON para el cuerpo de la petición'}
+                  </span>
+                </div>
+
+                {restSubTab === 'params' ? (
+                  <CodeEditor
+                    label="Parámetros Query (JSON) — Edita aquí o en la URL"
+                    language="json"
+                    value={paramsJson}
+                    onChange={handleParamsJsonChange}
+                    compactHeight="130px"
+                    expandedHeight="350px"
+                    defaultExpanded={false}
+                    placeholder={'{\n  "searchCriteria[pageSize]": 10,\n  "cartId": "{{cartId}}"\n}'}
+                  />
+                ) : (
+                  <CodeEditor
+                    label="Cuerpo de la Petición (Payload JSON)"
+                    language="json"
+                    value={body}
+                    onChange={setBody}
+                    compactHeight="140px"
+                    expandedHeight="400px"
+                    defaultExpanded={false}
+                    placeholder={'{\n  "paymentMethod": {\n    "method": "checkmo"\n  }\n}'}
+                  />
+                )}
+              </div>
             </div>
           )}
         </div>

@@ -18,7 +18,9 @@ import {
   Lock,
   History,
   FileSpreadsheet,
-  Square
+  Square,
+  Globe,
+  Braces
 } from 'lucide-react';
 import {
   Variant,
@@ -31,6 +33,7 @@ import {
   Environment
 } from '../../types';
 import { api } from '../../api';
+import { parseUrlToPathAndParams, buildUrlFromPathAndParams } from '../../utils/urlParams';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { StepDetailModal } from './StepDetailModal';
 import { SaveFlowModal } from './SaveFlowModal';
@@ -92,6 +95,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [savedSnapshot, setSavedSnapshot] = useState<string>('');
   const [expandedVars, setExpandedVars] = useState<Record<string, boolean>>({});
   const [rawJsonOverrides, setRawJsonOverrides] = useState<Record<string, string>>({});
+  const [stepRestSubTabs, setStepRestSubTabs] = useState<Record<string, 'params' | 'body'>>({});
+  const [stepParamsJson, setStepParamsJson] = useState<Record<string, string>>({});
+  const [stepBodyOverrides, setStepBodyOverrides] = useState<Record<string, string>>({});
 
   // Execution states
   const [runningStepId, setRunningStepId] = useState<string | null>(null);
@@ -128,7 +134,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         category: s.category,
         variantId: s.variantId,
         skipped: !!s.skipped,
-        overrideVariables: s.overrideVariables || {}
+        overrideVariables: s.overrideVariables || {},
+        endpoint: s.endpoint,
+        body: s.body
       })),
       dataset: currentDataset
         ? {
@@ -254,7 +262,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
           category: cat,
           variantId: selVariant ? selVariant.id : null,
           skipped: false,
-          overrideVariables: defaultVars
+          overrideVariables: defaultVars,
+          endpoint: selVariant?.endpoint,
+          body: selVariant?.body,
+          method: selVariant?.method,
+          apiType: selVariant?.apiType
         };
       }
     );
@@ -262,17 +274,29 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setSteps(initial);
     setDataset(undefined);
     const overridesMap: Record<string, string> = {};
+    const paramsMap: Record<string, string> = {};
+    const bodyMap: Record<string, string> = {};
     initial.forEach(s => {
       if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
         overridesMap[s.id] = JSON.stringify(s.overrideVariables, null, 2);
       }
+      if (s.endpoint) {
+        paramsMap[s.id] = parseUrlToPathAndParams(s.endpoint).paramsJson;
+      }
+      if (s.body !== undefined) {
+        bodyMap[s.id] = s.body;
+      }
     });
     setRawJsonOverrides(overridesMap);
+    setStepParamsJson(paramsMap);
+    setStepBodyOverrides(bodyMap);
     setSavedSnapshot(serializeFlowState(initial, undefined));
     resetRunState();
   };
 
   const applySavedFlow = (flow: SavedFlow, currentVariants: Variant[] = variants) => {
+    const paramsMap: Record<string, string> = {};
+    const bodyMap: Record<string, string> = {};
     const normalized: FlowStepConfig[] = (flow.steps || []).map((s, idx) => {
       const v = currentVariants.find(varItem => varItem.id === s.variantId);
       const defaultVars = v?.variables || v?.defaultVariables || {};
@@ -280,17 +304,34 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         s.overrideVariables && Object.keys(s.overrideVariables).length > 0
           ? s.overrideVariables
           : defaultVars;
+      const stepId = s.id || 'step-' + idx + '-' + Date.now().toString(36);
+      const effectiveEndpoint = s.endpoint !== undefined ? s.endpoint : v?.endpoint;
+      const effectiveBody = s.body !== undefined ? s.body : v?.body;
+
+      if (effectiveEndpoint) {
+        paramsMap[stepId] = parseUrlToPathAndParams(effectiveEndpoint).paramsJson;
+      }
+      if (effectiveBody !== undefined) {
+        bodyMap[stepId] = effectiveBody;
+      }
+
       return {
-        id: s.id || 'step-' + idx + '-' + Date.now().toString(36),
+        id: stepId,
         category: s.category || 'General',
         variantId: s.variantId || null,
         skipped: s.skipped || false,
-        overrideVariables: overrideVars
+        overrideVariables: overrideVars,
+        endpoint: s.endpoint,
+        body: s.body,
+        method: s.method || v?.method,
+        apiType: s.apiType || v?.apiType
       };
     });
 
     setSteps(normalized);
     setDataset(flow.dataset);
+    setStepParamsJson(paramsMap);
+    setStepBodyOverrides(bodyMap);
     const overridesMap: Record<string, string> = {};
     normalized.forEach(s => {
       if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
@@ -419,15 +460,83 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const handleVariantChange = (stepId: string, variantId: string) => {
     const newVariant = variants.find(v => v.id === variantId);
     const defaultVars = newVariant?.variables || newVariant?.defaultVariables || {};
+    const defaultEp = newVariant?.endpoint;
+    const defaultBody = newVariant?.body;
+
     setSteps(prev =>
-      prev.map(s => (s.id === stepId ? { ...s, variantId, overrideVariables: defaultVars } : s))
+      prev.map(s =>
+        s.id === stepId
+          ? {
+              ...s,
+              variantId,
+              overrideVariables: defaultVars,
+              endpoint: defaultEp,
+              body: defaultBody,
+              method: newVariant?.method,
+              apiType: newVariant?.apiType
+            }
+          : s
+      )
     );
+
     if (newVariant) {
       setRawJsonOverrides(prev => ({
         ...prev,
         [stepId]: JSON.stringify(defaultVars, null, 2)
       }));
+      if (defaultEp) {
+        setStepParamsJson(prev => ({
+          ...prev,
+          [stepId]: parseUrlToPathAndParams(defaultEp).paramsJson
+        }));
+      }
+      if (defaultBody !== undefined) {
+        setStepBodyOverrides(prev => ({
+          ...prev,
+          [stepId]: defaultBody
+        }));
+      }
     }
+  };
+
+  // Step Endpoint Change (with bidirectional sync to query params JSON)
+  const handleStepEndpointChange = (stepId: string, newUrl: string) => {
+    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, endpoint: newUrl } : s)));
+    const parsed = parseUrlToPathAndParams(newUrl);
+    setStepParamsJson(prev => ({ ...prev, [stepId]: parsed.paramsJson }));
+  };
+
+  // Step Params JSON Change (with bidirectional sync to Endpoint URL)
+  const handleStepParamsJsonChange = (stepId: string, newParamsJson: string) => {
+    setStepParamsJson(prev => ({ ...prev, [stepId]: newParamsJson }));
+    const step = steps.find(s => s.id === stepId);
+    const selectedVar = variants.find(v => v.id === step?.variantId);
+    const currentEndpoint =
+      step?.endpoint !== undefined ? step.endpoint : selectedVar?.endpoint || '';
+    const updatedUrl = buildUrlFromPathAndParams(currentEndpoint, newParamsJson);
+    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, endpoint: updatedUrl } : s)));
+  };
+
+  // Step Body Override Change
+  const handleStepBodyChange = (stepId: string, newBody: string) => {
+    setStepBodyOverrides(prev => ({ ...prev, [stepId]: newBody }));
+    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, body: newBody } : s)));
+  };
+
+  // Reset Step REST config (endpoint and body) to variant defaults
+  const handleResetStepRestToDefault = (stepId: string) => {
+    const step = steps.find(s => s.id === stepId);
+    const selectedVar = variants.find(v => v.id === step?.variantId);
+    if (!selectedVar) return;
+    const defaultEndpoint = selectedVar.endpoint || '';
+    const defaultBody = selectedVar.body || '';
+    setSteps(prev =>
+      prev.map(s => (s.id === stepId ? { ...s, endpoint: defaultEndpoint, body: defaultBody } : s))
+    );
+    const parsed = parseUrlToPathAndParams(defaultEndpoint);
+    setStepParamsJson(prev => ({ ...prev, [stepId]: parsed.paramsJson }));
+    setStepBodyOverrides(prev => ({ ...prev, [stepId]: defaultBody }));
+    toast(`Endpoint y body restablecidos al valor de "${selectedVar.name}"`, 'info');
   };
 
   // Skip Toggle
@@ -1162,7 +1271,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                             ? 'border-orange-500 text-orange-500 bg-orange-50 dark:bg-orange-950/20'
                             : 'border-slate-200 dark:border-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                         }`}
-                        title="Sobrescribir variables"
+                        title={selectedVar?.apiType === 'REST' ? 'Configurar Query Params y Body JSON' : 'Sobrescribir variables GraphQL'}
                       >
                         <Sliders className="w-3.5 h-3.5" />
                       </button>
@@ -1201,48 +1310,217 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                   </div>
                 </div>
 
-                {/* Drawer de Variables */}
-                {!isSkipped && expandedVars[step.id] && (
-                  <div className="px-3 pb-3 pt-2 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 rounded-b-xl space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                      <div className="flex items-center gap-1.5">
-                        <Sliders className="w-3.5 h-3.5 text-orange-500" />
-                        <span className="font-bold text-slate-800 dark:text-slate-200">
-                          Variables del Paso
-                        </span>
-                        <span className="text-[11px] text-slate-400">
-                          (Asociadas a este paso en el flujo)
+                {/* REST Endpoint Bar (visible en el card para ver y modificar directamente el link) */}
+                {selectedVar?.apiType === 'REST' && !isSkipped && (
+                  <div className="px-3 pb-3 pt-0">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-slate-50 dark:bg-slate-950/70 p-2 rounded-xl border border-slate-200 dark:border-slate-800/80">
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <Globe className="w-3.5 h-3.5 text-blue-500" />
+                        <span
+                          className={`text-[10px] font-mono px-2 py-0.5 rounded-md font-bold uppercase ${
+                            (selectedVar.method || 'POST') === 'GET'
+                              ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20'
+                              : (selectedVar.method || 'POST') === 'POST'
+                              ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
+                              : (selectedVar.method || 'POST') === 'PUT'
+                              ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20'
+                              : 'bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20'
+                          }`}
+                        >
+                          {selectedVar.method || 'POST'}
                         </span>
                       </div>
+
+                      <div className="flex-1 flex items-center gap-1.5 min-w-0">
+                        <input
+                          type="text"
+                          value={
+                            step.endpoint !== undefined
+                              ? step.endpoint
+                              : selectedVar.endpoint || ''
+                          }
+                          onChange={e => handleStepEndpointChange(step.id, e.target.value)}
+                          placeholder="/rest/default/V1/carts/mine/payment-information?param=val"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                          title="URL / Endpoint REST (los parámetros query se sincronizan automáticamente con el JSON)"
+                        />
+                      </div>
+
                       <button
                         type="button"
-                        onClick={() => handleResetStepVariablesToDefault(step.id)}
-                        className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline flex items-center gap-1 transition-colors"
-                        title="Restablecer al JSON original de la variante"
+                        onClick={() => handleToggleExpandVars(step.id)}
+                        className={`shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-semibold border flex items-center gap-1.5 transition-colors ${
+                          expandedVars[step.id]
+                            ? 'bg-blue-50 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400 border-blue-300 dark:border-blue-800'
+                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:text-blue-600 dark:hover:text-blue-400'
+                        }`}
+                        title="Ver y editar Params JSON o Body JSON"
                       >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>Restablecer defecto de variante</span>
+                        <Sliders className="w-3 h-3 text-blue-500" />
+                        <span>Params & Body</span>
                       </button>
                     </div>
+                  </div>
+                )}
 
-                    <CodeEditor
-                      language="json"
-                      compactHeight="110px"
-                      expandedHeight="300px"
-                      defaultExpanded={false}
-                      value={
-                        rawJsonOverrides[step.id] ??
-                        JSON.stringify(
-                          step.overrideVariables && Object.keys(step.overrideVariables).length > 0
-                            ? step.overrideVariables
-                            : selectedVar?.variables || selectedVar?.defaultVariables || {},
-                          null,
-                          2
-                        )
-                      }
-                      onChange={val => handleOverrideJsonChange(step.id, val)}
-                      placeholder='{"sku": "24-MB01", "quantity": 1}'
-                    />
+                {/* Drawer de Variables y Parámetros */}
+                {!isSkipped && expandedVars[step.id] && (
+                  <div className="px-3 pb-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 rounded-b-xl space-y-2.5">
+                    {selectedVar?.apiType === 'REST' ? (
+                      /* Sección REST: Tabs para Query Params (JSON) y Body (JSON) */
+                      <div className="space-y-2.5">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div className="flex items-center gap-1.5 bg-slate-200/70 dark:bg-slate-800/80 p-0.5 rounded-lg text-xs">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setStepRestSubTabs(prev => ({ ...prev, [step.id]: 'params' }))
+                              }
+                              className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-xs transition-all ${
+                                (stepRestSubTabs[step.id] || 'params') === 'params'
+                                  ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                              }`}
+                            >
+                              <Sliders className="w-3 h-3" />
+                              <span>Query Params (JSON)</span>
+                              {(() => {
+                                try {
+                                  const currentP =
+                                    stepParamsJson[step.id] ??
+                                    parseUrlToPathAndParams(
+                                      step.endpoint ?? selectedVar.endpoint ?? ''
+                                    ).paramsJson;
+                                  const count = Object.keys(JSON.parse(currentP || '{}')).length;
+                                  return count > 0 ? (
+                                    <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-blue-500/10 text-blue-600 dark:text-blue-400 font-bold">
+                                      {count}
+                                    </span>
+                                  ) : null;
+                                } catch {
+                                  return null;
+                                }
+                              })()}
+                            </button>
+
+                            {selectedVar.method !== 'GET' && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setStepRestSubTabs(prev => ({ ...prev, [step.id]: 'body' }))
+                                }
+                                className={`flex items-center gap-1 px-2.5 py-1 rounded-md font-bold text-xs transition-all ${
+                                  stepRestSubTabs[step.id] === 'body'
+                                    ? 'bg-white dark:bg-slate-900 text-blue-600 dark:text-blue-400 shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                                }`}
+                              >
+                                <Braces className="w-3 h-3" />
+                                <span>Cuerpo / Body (JSON)</span>
+                              </button>
+                            )}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => handleResetStepRestToDefault(step.id)}
+                            className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1 transition-colors"
+                            title="Restablecer endpoint y body al valor por defecto de la variante"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restablecer defecto de variante</span>
+                          </button>
+                        </div>
+
+                        {(stepRestSubTabs[step.id] || 'params') === 'params' ? (
+                          <div>
+                            <p className="text-[11px] text-slate-400 mb-1.5">
+                              Edita los parámetros de la URL en formato JSON. Se sincronizarán automáticamente con la URL de la petición.
+                            </p>
+                            <CodeEditor
+                              language="json"
+                              compactHeight="110px"
+                              expandedHeight="300px"
+                              defaultExpanded={false}
+                              value={
+                                stepParamsJson[step.id] ??
+                                parseUrlToPathAndParams(
+                                  step.endpoint ?? selectedVar.endpoint ?? ''
+                                ).paramsJson
+                              }
+                              onChange={val => handleStepParamsJsonChange(step.id, val)}
+                              placeholder='{"searchCriteria[pageSize]": 10, "cartId": "{{cartId}}"}'
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <p className="text-[11px] text-slate-400 mb-1.5">
+                              Cuerpo / Payload JSON de la petición REST. Puedes usar variables dinámicas como <code className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{"{{cartId}}"}</code>.
+                            </p>
+                            <CodeEditor
+                              language="json"
+                              compactHeight="130px"
+                              expandedHeight="320px"
+                              defaultExpanded={false}
+                              value={
+                                stepBodyOverrides[step.id] ??
+                                (step.body !== undefined
+                                  ? step.body
+                                  : selectedVar.body || '')
+                              }
+                              onChange={val => handleStepBodyChange(step.id, val)}
+                              placeholder='{\n  "paymentMethod": {\n    "method": "checkmo"\n  }\n}'
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      /* Sección GraphQL estándar */
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-1.5">
+                            <Sliders className="w-3.5 h-3.5 text-orange-500" />
+                            <span className="font-bold text-slate-800 dark:text-slate-200">
+                              Variables del Paso (GraphQL)
+                            </span>
+                            <span className="text-[11px] text-slate-400">
+                              (Asociadas a este paso en el flujo)
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleResetStepVariablesToDefault(step.id)}
+                            className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline flex items-center gap-1 transition-colors"
+                            title="Restablecer al JSON original de la variante"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restablecer defecto de variante</span>
+                          </button>
+                        </div>
+
+                        <CodeEditor
+                          language="json"
+                          compactHeight="110px"
+                          expandedHeight="300px"
+                          defaultExpanded={false}
+                          value={
+                            rawJsonOverrides[step.id] ??
+                            JSON.stringify(
+                              step.overrideVariables &&
+                                Object.keys(step.overrideVariables).length > 0
+                                ? step.overrideVariables
+                                : selectedVar?.variables ||
+                                    selectedVar?.defaultVariables ||
+                                    {},
+                              null,
+                              2
+                            )
+                          }
+                          onChange={val => handleOverrideJsonChange(step.id, val)}
+                          placeholder='{"sku": "24-MB01", "quantity": 1}'
+                        />
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
