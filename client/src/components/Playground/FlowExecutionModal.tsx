@@ -7,7 +7,8 @@ import {
   AlertTriangle,
   Copy,
   ExternalLink,
-  Square
+  Square,
+  Clock
 } from 'lucide-react';
 import { FlowStepConfig, Variant, StepExecutionResult, ExecutionContext, FlowExecutionResponse, CsvDataset } from '../../types';
 import { api } from '../../api';
@@ -19,6 +20,7 @@ interface FlowExecutionModalProps {
   steps: FlowStepConfig[];
   variants: Variant[];
   dataset?: CsvDataset;
+  defaultDelayMs?: number;
   initialContext?: ExecutionContext;
   onExecutionComplete: (
     result: FlowExecutionResponse,
@@ -80,6 +82,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
   steps,
   variants,
   dataset,
+  defaultDelayMs = 0,
   initialContext,
   onExecutionComplete,
   onInspectStep
@@ -87,6 +90,13 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
   const [currentDatasetRowIndex, setCurrentDatasetRowIndex] = useState<number>(0);
+  const [globalDelayMs, setGlobalDelayMs] = useState<number>(defaultDelayMs);
+  const [sleepingState, setSleepingState] = useState<{
+    active: boolean;
+    stepName: string;
+    totalMs: number;
+    remainingMs: number;
+  } | null>(null);
   const [datasetResults, setDatasetResults] = useState<
     Array<{
       rowIndex: number;
@@ -127,8 +137,44 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
   const waypoints = getMountainWaypoints(activeSteps.length);
 
+  // Pausa / Sleep entre peticiones con soporte de cancelación inmediata
+  const sleepWithAbort = (ms: number, stepName: string): Promise<boolean> => {
+    return new Promise(resolve => {
+      const startTime = Date.now();
+      setSleepingState({
+        active: true,
+        stepName,
+        totalMs: ms,
+        remainingMs: ms
+      });
+
+      const interval = setInterval(() => {
+        if (abortControllerRef.current) {
+          clearInterval(interval);
+          setSleepingState(null);
+          resolve(false);
+          return;
+        }
+        const elapsed = Date.now() - startTime;
+        const remaining = Math.max(0, ms - elapsed);
+        setSleepingState({
+          active: true,
+          stepName,
+          totalMs: ms,
+          remainingMs: remaining
+        });
+        if (remaining <= 0) {
+          clearInterval(interval);
+          setSleepingState(null);
+          resolve(true);
+        }
+      }, 100);
+    });
+  };
+
   const handleAbort = () => {
     abortControllerRef.current = true;
+    setSleepingState(null);
     if (fetchAbortControllerRef.current) {
       try {
         fetchAbortControllerRef.current.abort();
@@ -294,6 +340,22 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
           if (isStepOk) {
             setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'success' }));
+
+            // Pausa / Sleep antes de continuar con la siguiente petición si no es el último paso
+            if (i < activeSteps.length - 1 && !abortControllerRef.current) {
+              const effectiveSleep =
+                baseStep.sleepMs !== undefined && baseStep.sleepMs > 0
+                  ? baseStep.sleepMs
+                  : globalDelayMs;
+
+              if (effectiveSleep > 0) {
+                const stepTitle = baseStep.category || `Paso #${i + 1}`;
+                const ok = await sleepWithAbort(effectiveSleep, stepTitle);
+                if (!ok || abortControllerRef.current) {
+                  break;
+                }
+              }
+            }
           } else {
             flowFailed = true;
             failedCat = baseStep.category || 'Paso';
@@ -485,7 +547,12 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                 {flowName || 'Flujo de Checkout'}
               </h1>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                {flowStatus === 'success'
+                {sleepingState?.active ? (
+                  <span className="text-amber-500 font-bold flex items-center gap-1">
+                    <Clock className="w-3 h-3 animate-spin" />
+                    Pausa interna ({sleepingState.stepName}): esperando {(sleepingState.remainingMs / 1000).toFixed(1)}s...
+                  </span>
+                ) : flowStatus === 'success'
                   ? '¡Cima conquistada en Super Saiyajin!'
                   : flowStatus === 'failed'
                   ? 'Expedición detenida'
@@ -495,6 +562,34 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
+            {sleepingState?.active && (
+              <div className="flex items-center gap-1.5 px-3 py-1 rounded-xl bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-bold animate-pulse">
+                <Clock className="w-3.5 h-3.5 animate-spin" />
+                <span>Sleep {(sleepingState.remainingMs / 1000).toFixed(1)}s</span>
+              </div>
+            )}
+
+            {!isRunning && (
+              <div className="hidden sm:flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/70 dark:bg-slate-900/60 border border-slate-200/80 dark:border-white/10 text-xs text-slate-600 dark:text-slate-300">
+                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                <span className="text-[11px] font-medium">Delay:</span>
+                {[0, 1000, 2000, 3000].map(ms => (
+                  <button
+                    key={ms}
+                    type="button"
+                    onClick={() => setGlobalDelayMs(ms)}
+                    className={`px-1.5 py-0.5 rounded text-[11px] font-bold transition-all ${
+                      globalDelayMs === ms
+                        ? 'bg-indigo-600 text-white shadow-2xs'
+                        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500'
+                    }`}
+                    title={ms === 0 ? 'Sin delay global (usa sleep individual por paso)' : `Pausar ${ms / 1000}s entre cada paso`}
+                  >
+                    {ms === 0 ? '0s' : `${ms / 1000}s`}
+                  </button>
+                ))}
+              </div>
+            )}
             {isRunning && (
               <button
                 onClick={handleAbort}

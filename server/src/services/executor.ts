@@ -932,7 +932,8 @@ export class FlowExecutionService {
     let failedAtCategory: string | null = null;
     let errorMessage: string | undefined = undefined;
 
-    for (const step of steps) {
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
       const { stepResult, hasError, errorMessage: stepErr } = await this.executeStepInternal(
         step,
         context,
@@ -946,6 +947,12 @@ export class FlowExecutionService {
         failedAtCategory = step.category;
         errorMessage = stepErr;
         break;
+      }
+
+      // Si no es el último paso, pausar si el paso tiene sleepMs configurado
+      if (i < steps.length - 1 && step.sleepMs !== undefined && step.sleepMs > 0) {
+        context.logs.push(`[Sleep] Esperando ${step.sleepMs}ms antes del siguiente paso para procesar operaciones internas...`);
+        await new Promise(resolve => setTimeout(resolve, step.sleepMs));
       }
     }
 

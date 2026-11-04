@@ -137,6 +137,7 @@ export interface FlowStepConfig {
   variantId: string | null;
   environmentId?: string | null;
   skipped: boolean;
+  sleepMs?: number; // Pausa / Sleep tras este paso antes de la siguiente petición (en ms)
   overrideVariables?: Record<string, any>;
   query?: string;
   endpoint?: string;
@@ -160,6 +161,7 @@ export interface SavedFlow {
   name: string;
   description?: string;
   steps: FlowStepConfig[];
+  defaultDelayMs?: number; // Pausa / Delay global por defecto entre pasos (en ms)
   dataset?: CsvDataset;
   isLocked?: boolean;
   lockedBy?: string;

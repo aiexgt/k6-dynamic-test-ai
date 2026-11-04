@@ -21,7 +21,9 @@ import {
   FileSpreadsheet,
   Square,
   Globe,
-  Braces
+  Braces,
+  Clock,
+  X
 } from 'lucide-react';
 import {
   Variant,
@@ -129,6 +131,36 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragEnabledIndex, setDragEnabledIndex] = useState<number | null>(null);
 
+  // Popover rápido de Sleep en cada paso
+  const [openSleepPopoverId, setOpenSleepPopoverId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openSleepPopoverId) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-sleep-popover="true"]')) {
+        setOpenSleepPopoverId(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [openSleepPopoverId]);
+
+  const handleStepSleepChange = (stepId: string, sleepMs: number | undefined) => {
+    setSteps(prev =>
+      prev.map(s => {
+        if (s.id !== stepId) return s;
+        const updated = { ...s };
+        if (sleepMs !== undefined && sleepMs > 0) {
+          updated.sleepMs = sleepMs;
+        } else {
+          delete updated.sleepMs;
+        }
+        return updated;
+      })
+    );
+  };
+
   // Limpieza estricta de pasos antes de guardar o serializar:
   // Si las variables, endpoint o body NO fueron modificados respecto a la variante,
   // NO se guardan en el paso del flujo para que continúen heredando dinámicamente de la variante.
@@ -164,6 +196,10 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         variantId: s.variantId,
         skipped: !!s.skipped
       };
+
+      if (s.sleepMs !== undefined && s.sleepMs > 0) {
+        cleaned.sleepMs = s.sleepMs;
+      }
 
       if (isCustomizedVars) {
         cleaned.overrideVariables = s.overrideVariables;
@@ -376,6 +412,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         category: s.category || 'General',
         variantId: s.variantId || null,
         skipped: s.skipped || false,
+        sleepMs: s.sleepMs !== undefined && s.sleepMs > 0 ? s.sleepMs : undefined,
         overrideVariables: isCustomizedVars ? s.overrideVariables : undefined,
         endpoint: isCustomizedEndpoint ? s.endpoint : undefined,
         body: isCustomizedBody ? s.body : undefined,
@@ -1381,6 +1418,107 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                       {isSkipped ? 'Skip' : 'Activo'}
                     </button>
 
+                    {/* Botón Sleep / Pausa */}
+                    {!isSkipped && (
+                      <div className="relative" data-sleep-popover="true">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setOpenSleepPopoverId(prev => (prev === step.id ? null : step.id))
+                          }
+                          className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-all ${
+                            step.sleepMs && step.sleepMs > 0
+                              ? 'bg-indigo-50 dark:bg-indigo-950/40 border-indigo-300 dark:border-indigo-700 text-indigo-600 dark:text-indigo-400 font-bold shadow-2xs'
+                              : 'bg-slate-50 dark:bg-slate-950 text-slate-500 dark:text-slate-400 border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700'
+                          }`}
+                          title={
+                            step.sleepMs && step.sleepMs > 0
+                              ? `Pausa de ${step.sleepMs}ms tras este paso antes de la siguiente petición`
+                              : 'Configurar pausa / sleep tras este paso'
+                          }
+                        >
+                          <Clock
+                            className={`w-3.5 h-3.5 ${
+                              step.sleepMs && step.sleepMs > 0 ? 'text-indigo-500' : 'text-slate-400'
+                            }`}
+                          />
+                          <span>
+                            {step.sleepMs && step.sleepMs > 0
+                              ? `${
+                                  step.sleepMs >= 1000
+                                    ? (step.sleepMs / 1000).toFixed(1).replace(/\.0$/, '') + 's'
+                                    : step.sleepMs + 'ms'
+                                } sleep`
+                              : 'Sleep'}
+                          </span>
+                        </button>
+
+                        {openSleepPopoverId === step.id && (
+                          <div className="absolute z-50 right-0 mt-1 w-64 p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl space-y-2.5 animate-in fade-in zoom-in-95 duration-100">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800 dark:text-slate-200">
+                                <Clock className="w-3.5 h-3.5 text-indigo-500" />
+                                <span>Pausa tras este paso</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setOpenSleepPopoverId(null)}
+                                className="p-0.5 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <p className="text-[11px] text-slate-400 leading-tight">
+                              Espera antes de la siguiente petición para que el sistema procese tareas internas.
+                            </p>
+                            <div className="grid grid-cols-3 gap-1.5 pt-1">
+                              {[0, 500, 1000, 2000, 3000, 5000].map(ms => {
+                                const isSelected = (step.sleepMs || 0) === ms;
+                                return (
+                                  <button
+                                    key={ms}
+                                    type="button"
+                                    onClick={() => {
+                                      handleStepSleepChange(step.id, ms > 0 ? ms : undefined);
+                                      if (ms === 0) setOpenSleepPopoverId(null);
+                                    }}
+                                    className={`px-2 py-1 rounded-lg text-xs font-semibold transition-all ${
+                                      isSelected
+                                        ? 'bg-indigo-600 text-white font-bold shadow-xs'
+                                        : 'bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                    }`}
+                                  >
+                                    {ms === 0 ? 'Sin pausa' : ms >= 1000 ? `${ms / 1000}s` : `${ms}ms`}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            <div className="flex items-center gap-2 pt-1 border-t border-slate-100 dark:border-slate-800">
+                              <span className="text-[11px] font-semibold text-slate-500">Custom:</span>
+                              <div className="flex items-center gap-1 flex-1">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  step={100}
+                                  value={step.sleepMs || ''}
+                                  placeholder="ms"
+                                  onChange={e => {
+                                    const val = parseInt(e.target.value, 10);
+                                    handleStepSleepChange(
+                                      step.id,
+                                      isNaN(val) || val <= 0 ? undefined : val
+                                    );
+                                  }}
+                                  className="w-full px-2 py-1 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                />
+                                <span className="text-[11px] text-slate-400 font-mono">ms</span>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     {!isSkipped && (
                       <button
                         type="button"
@@ -1496,6 +1634,54 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                 {/* Drawer de Variables y Parámetros */}
                 {!isSkipped && expandedVars[step.id] && (
                   <div className="px-3 pb-3 pt-2.5 border-t border-slate-100 dark:border-slate-800/80 bg-slate-50/70 dark:bg-slate-950/60 rounded-b-xl space-y-2.5">
+                    {/* Sección de Sleep / Pausa post-ejecución */}
+                    <div className="flex flex-wrap items-center justify-between gap-2.5 p-2 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <Clock className="w-4 h-4 text-indigo-500 shrink-0" />
+                        <div>
+                          <div className="text-xs font-bold text-slate-800 dark:text-slate-200">
+                            Pausa tras este paso (Sleep)
+                          </div>
+                          <div className="text-[11px] text-slate-400">
+                            Espera antes de enviar la siguiente petición (da margen a tareas internas del sistema)
+                          </div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {[0, 500, 1000, 2000, 3000, 5000].map(ms => {
+                          const isSelected = (step.sleepMs || 0) === ms;
+                          return (
+                            <button
+                              key={ms}
+                              type="button"
+                              onClick={() => handleStepSleepChange(step.id, ms > 0 ? ms : undefined)}
+                              className={`px-2 py-0.5 rounded-lg text-xs font-semibold transition-all ${
+                                isSelected
+                                  ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                                  : 'bg-slate-50 dark:bg-slate-800 text-slate-600 dark:text-slate-300 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700'
+                              }`}
+                            >
+                              {ms === 0 ? '0s' : ms >= 1000 ? `${ms / 1000}s` : `${ms}ms`}
+                            </button>
+                          );
+                        })}
+                        <div className="flex items-center gap-1 ml-1">
+                          <input
+                            type="number"
+                            min={0}
+                            step={100}
+                            value={step.sleepMs || ''}
+                            placeholder="ms"
+                            onChange={e => {
+                              const val = parseInt(e.target.value, 10);
+                              handleStepSleepChange(step.id, isNaN(val) || val <= 0 ? undefined : val);
+                            }}
+                            className="w-20 px-2 py-0.5 text-xs font-mono font-bold rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                          />
+                          <span className="text-[10px] text-slate-400 font-mono">ms</span>
+                        </div>
+                      </div>
+                    </div>
                     {selectedVar?.apiType === 'REST' ? (
                       /* Sección REST: Tabs para Query Params (JSON) y Body (JSON) */
                       <div className="space-y-2.5">
