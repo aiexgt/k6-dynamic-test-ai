@@ -332,18 +332,49 @@ export const GraphQLSchemaService = {
           const val = parsedVars[varDef.name];
           if (val === undefined || val === null || val === '__TEMPLATE_VAR__') continue;
 
+          const isVarList = varDef.isList || varDef.typeString.includes('[');
+
           // Si esperaba lista y no se pasó arreglo
-          if (varDef.isList && !Array.isArray(val)) {
-            diagnostics.push({
-              message: `La variable "$${varDef.name}" debe ser una lista/arreglo [${varDef.typeName}], pero se pasó un valor no-arreglo.`,
-              severity: 'error',
-              source: 'variable'
-            });
-            continue;
+          if (isVarList) {
+            if (!Array.isArray(val)) {
+              diagnostics.push({
+                message: `La variable "$${varDef.name}" debe ser una lista/arreglo [${varDef.typeName}], pero se pasó un valor no-arreglo.`,
+                severity: 'error',
+                source: 'variable'
+              });
+              continue;
+            } else if (!varDef.schemaInputFields) {
+              // Validar cada elemento de la lista a nivel raíz si son escalares
+              val.forEach((elem, elemIdx) => {
+                if (elem === undefined || elem === null || elem === '__TEMPLATE_VAR__') return;
+                const rawElem = String(elem);
+                if (rawElem.startsWith('{{') && rawElem.endsWith('}}')) return;
+
+                if ((varDef.typeString.includes('Int') || varDef.typeString.includes('Float')) && typeof elem !== 'number') {
+                  diagnostics.push({
+                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un número (${varDef.typeString}), pero se recibió "${typeof elem}".`,
+                    severity: 'error',
+                    source: 'variable'
+                  });
+                } else if (varDef.typeString.includes('Boolean') && typeof elem !== 'boolean') {
+                  diagnostics.push({
+                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un booleano (true/false), pero se recibió "${typeof elem}".`,
+                    severity: 'error',
+                    source: 'variable'
+                  });
+                } else if (varDef.typeString.includes('String') && typeof elem !== 'string') {
+                  diagnostics.push({
+                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un texto (String), pero se recibió "${typeof elem}".`,
+                    severity: 'error',
+                    source: 'variable'
+                  });
+                }
+              });
+            }
           }
 
           // Validación de tipos primitivos escalares a nivel raíz
-          if (!varDef.isList && !varDef.schemaInputFields) {
+          if (!isVarList && !varDef.schemaInputFields) {
             const rawVal = String(val);
             const isTemplate = rawVal.startsWith('{{') && rawVal.endsWith('}}');
             if (!isTemplate) {
@@ -401,32 +432,66 @@ export const GraphQLSchemaService = {
                     });
                   } else if (fieldVal !== undefined && fieldVal !== null && fieldVal !== '__TEMPLATE_VAR__') {
                     const rawVal = String(fieldVal);
-                    const isTemplate = rawVal.startsWith('{{') && rawVal.endsWith('}}');
+                    const isTemplate = typeof fieldVal === 'string' && rawVal.startsWith('{{') && rawVal.endsWith('}}');
                     if (!isTemplate) {
-                      if (fieldDef.isList && !Array.isArray(fieldVal)) {
-                        diagnostics.push({
-                          message: `En ${prefix}.${k}, se esperaba un arreglo (${fieldDef.typeString}), pero se recibió "${typeof fieldVal}".`,
-                          severity: 'error',
-                          source: 'variable'
-                        });
-                      } else if ((fieldDef.typeString.includes('Int') || fieldDef.typeString.includes('Float')) && typeof fieldVal !== 'number') {
-                        diagnostics.push({
-                          message: `En ${prefix}.${k}, se esperaba un número (${fieldDef.typeString}), pero se recibió "${typeof fieldVal}".`,
-                          severity: 'error',
-                          source: 'variable'
-                        });
-                      } else if (fieldDef.typeString.includes('Boolean') && typeof fieldVal !== 'boolean') {
-                        diagnostics.push({
-                          message: `En ${prefix}.${k}, se esperaba un booleano (true/false), pero se recibió "${typeof fieldVal}".`,
-                          severity: 'error',
-                          source: 'variable'
-                        });
-                      } else if (fieldDef.typeString.includes('String') && typeof fieldVal !== 'string') {
-                        diagnostics.push({
-                          message: `En ${prefix}.${k}, se esperaba un texto (String), pero se recibió "${typeof fieldVal}".`,
-                          severity: 'error',
-                          source: 'variable'
-                        });
+                      const isFieldList = fieldDef.isList || fieldDef.typeString.includes('[');
+
+                      if (isFieldList) {
+                        if (!Array.isArray(fieldVal)) {
+                          diagnostics.push({
+                            message: `En ${prefix}.${k}, se esperaba un arreglo (${fieldDef.typeString}), pero se recibió "${typeof fieldVal}".`,
+                            severity: 'error',
+                            source: 'variable'
+                          });
+                        } else {
+                          // Es una lista: validar cada elemento del arreglo
+                          fieldVal.forEach((elem, elemIdx) => {
+                            if (elem === undefined || elem === null || elem === '__TEMPLATE_VAR__') return;
+                            const rawElem = String(elem);
+                            if (typeof elem === 'string' && rawElem.startsWith('{{') && rawElem.endsWith('}}')) return;
+
+                            if ((fieldDef.typeString.includes('Int') || fieldDef.typeString.includes('Float')) && typeof elem !== 'number') {
+                              diagnostics.push({
+                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un número (${fieldDef.typeString}), pero se recibió "${typeof elem}".`,
+                                severity: 'error',
+                                source: 'variable'
+                              });
+                            } else if (fieldDef.typeString.includes('Boolean') && typeof elem !== 'boolean') {
+                              diagnostics.push({
+                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un booleano (true/false), pero se recibió "${typeof elem}".`,
+                                severity: 'error',
+                                source: 'variable'
+                              });
+                            } else if (fieldDef.typeString.includes('String') && typeof elem !== 'string') {
+                              diagnostics.push({
+                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un texto (String), pero se recibió "${typeof elem}".`,
+                                severity: 'error',
+                                source: 'variable'
+                              });
+                            }
+                          });
+                        }
+                      } else {
+                        // Campo escalar no-lista
+                        if ((fieldDef.typeString.includes('Int') || fieldDef.typeString.includes('Float')) && typeof fieldVal !== 'number') {
+                          diagnostics.push({
+                            message: `En ${prefix}.${k}, se esperaba un número (${fieldDef.typeString}), pero se recibió "${typeof fieldVal}".`,
+                            severity: 'error',
+                            source: 'variable'
+                          });
+                        } else if (fieldDef.typeString.includes('Boolean') && typeof fieldVal !== 'boolean') {
+                          diagnostics.push({
+                            message: `En ${prefix}.${k}, se esperaba un booleano (true/false), pero se recibió "${typeof fieldVal}".`,
+                            severity: 'error',
+                            source: 'variable'
+                          });
+                        } else if (fieldDef.typeString.includes('String') && typeof fieldVal !== 'string') {
+                          diagnostics.push({
+                            message: `En ${prefix}.${k}, se esperaba un texto (String), pero se recibió "${typeof fieldVal}".`,
+                            severity: 'error',
+                            source: 'variable'
+                          });
+                        }
                       }
                     }
                   }
