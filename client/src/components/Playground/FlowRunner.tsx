@@ -16,6 +16,7 @@ import {
   Edit2,
   GripVertical,
   Lock,
+  Unlock,
   History,
   FileSpreadsheet,
   Square,
@@ -131,25 +132,31 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   // Limpieza estricta de pasos antes de guardar o serializar:
   // Si las variables, endpoint o body NO fueron modificados respecto a la variante,
   // NO se guardan en el paso del flujo para que continúen heredando dinámicamente de la variante.
-  const cleanStepsForSaving = (stepsList: FlowStepConfig[]): FlowStepConfig[] => {
+  const cleanStepsForSaving = (
+    stepsList: FlowStepConfig[],
+    variantsList: Variant[] = variants
+  ): FlowStepConfig[] => {
     return stepsList.map(s => {
-      const v = variants.find(variant => variant.id === s.variantId);
+      const v = variantsList.find(variant => variant.id === s.variantId);
       const vVars = v?.variables || v?.defaultVariables || {};
 
-      const isCustomizedVars =
-        s.overrideVariables !== undefined &&
-        Object.keys(s.overrideVariables).length > 0 &&
-        !areObjectsEqual(s.overrideVariables, vVars);
+      const isCustomizedVars = v
+        ? s.overrideVariables !== undefined &&
+          Object.keys(s.overrideVariables).length > 0 &&
+          !areObjectsEqual(s.overrideVariables, vVars)
+        : (s.overrideVariables !== undefined && Object.keys(s.overrideVariables).length > 0);
 
-      const isCustomizedEndpoint =
-        s.endpoint !== undefined &&
-        s.endpoint.trim() !== '' &&
-        s.endpoint.trim() !== (v?.endpoint || '').trim();
+      const isCustomizedEndpoint = v
+        ? s.endpoint !== undefined &&
+          s.endpoint.trim() !== '' &&
+          s.endpoint.trim() !== (v.endpoint || '').trim()
+        : (s.endpoint !== undefined && s.endpoint.trim() !== '');
 
-      const isCustomizedBody =
-        s.body !== undefined &&
-        s.body.trim() !== '' &&
-        s.body.trim() !== (v?.body || '').trim();
+      const isCustomizedBody = v
+        ? s.body !== undefined &&
+          s.body.trim() !== '' &&
+          s.body.trim() !== (v.body || '').trim()
+        : (s.body !== undefined && s.body.trim() !== '');
 
       const cleaned: FlowStepConfig = {
         id: s.id,
@@ -167,10 +174,10 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       if (isCustomizedBody) {
         cleaned.body = s.body;
       }
-      if (s.method && s.method !== v?.method) {
+      if (s.method && v && s.method !== v.method) {
         cleaned.method = s.method;
       }
-      if (s.apiType && s.apiType !== v?.apiType) {
+      if (s.apiType && v && s.apiType !== v.apiType) {
         cleaned.apiType = s.apiType;
       }
 
@@ -179,8 +186,12 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   };
 
   // Unsaved changes calculation con sanitización dinámica
-  const serializeFlowState = (stepsList: FlowStepConfig[], currentDataset?: CsvDataset) => {
-    const cleaned = cleanStepsForSaving(stepsList);
+  const serializeFlowState = (
+    stepsList: FlowStepConfig[],
+    currentDataset?: CsvDataset,
+    variantsList: Variant[] = variants
+  ) => {
+    const cleaned = cleanStepsForSaving(stepsList, variantsList);
     return JSON.stringify({
       steps: cleaned,
       dataset: currentDataset
@@ -250,11 +261,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   }, []);
 
   useEffect(() => {
-    if (initialFlow) {
-      applySavedFlow(initialFlow);
+    if (initialFlow && variants.length > 0) {
+      applySavedFlow(initialFlow, variants);
       setSelectedFlowId(initialFlow.id);
     }
-  }, [initialFlow]);
+  }, [initialFlow, variants.length]);
 
   const loadData = async (isInitial = false) => {
     try {
@@ -378,7 +389,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setStepParamsJson(paramsMap);
     setStepBodyOverrides(bodyMap);
     setRawJsonOverrides(overridesMap);
-    setSavedSnapshot(serializeFlowState(normalized, flow.dataset));
+    setSavedSnapshot(serializeFlowState(normalized, flow.dataset, currentVariants));
     if (typeof window !== 'undefined' && flow.id) {
       localStorage.setItem('flowrunner_last_flow_id', flow.id);
     }
@@ -408,7 +419,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     resetRunState();
     setRawJsonOverrides({});
     setExpandedVars({});
-    setSavedSnapshot(serializeFlowState([], undefined));
+    setSavedSnapshot(serializeFlowState([], undefined, variants));
     onFlowChange?.('');
   };
 
@@ -426,7 +437,27 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     }
     const found = savedFlows.find(f => f.id === flowId);
     if (found) {
-      applySavedFlow(found);
+      applySavedFlow(found, variants);
+    }
+  };
+
+  // Lock / Unlock current active flow directly in Playground
+  const handleToggleLockActiveFlow = async () => {
+    if (!activeFlow) return;
+    try {
+      if (activeFlow.isLocked) {
+        const unlocked = await api.unlockFlow(activeFlow.id);
+        setSavedFlows(prev => prev.map(f => (f.id === unlocked.id ? unlocked : f)));
+        setSavedSnapshot(serializeFlowState(steps, dataset, variants));
+        toast('Flujo desbloqueado exitosamente', 'success');
+      } else {
+        const locked = await api.lockFlow(activeFlow.id);
+        setSavedFlows(prev => prev.map(f => (f.id === locked.id ? locked : f)));
+        setSavedSnapshot(serializeFlowState(steps, dataset, variants));
+        toast('Flujo marcado como bloqueado', 'success');
+      }
+    } catch (err: any) {
+      toast(err.message || 'Error al cambiar bloqueo', 'error');
     }
   };
 
@@ -987,6 +1018,35 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
               </button>
             )}
 
+            {activeFlow && (
+              <button
+                type="button"
+                onClick={handleToggleLockActiveFlow}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+                  activeFlow.isLocked
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400 font-bold'
+                    : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+                }`}
+                title={
+                  activeFlow.isLocked
+                    ? `Flujo bloqueado por ${activeFlow.lockedByName || 'equipo'}. Haz clic para desbloquear.`
+                    : 'Marcar flujo como bloqueado para proteger la prueba'
+                }
+              >
+                {activeFlow.isLocked ? (
+                  <>
+                    <Lock className="w-3.5 h-3.5 text-amber-500" />
+                    <span>Bloqueado</span>
+                  </>
+                ) : (
+                  <>
+                    <Unlock className="w-3.5 h-3.5 text-slate-400" />
+                    <span>Bloquear</span>
+                  </>
+                )}
+              </button>
+            )}
+
             {/* Botón Matriz CSV / Dataset */}
             <button
               onClick={() => setIsDatasetModalOpen(true)}
@@ -1148,15 +1208,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
           </div>
           <div className="flex items-center gap-2 shrink-0">
             <button
-              onClick={async () => {
-                try {
-                  const unlocked = await api.unlockFlow(activeFlow.id);
-                  setSavedFlows(prev => prev.map(f => (f.id === unlocked.id ? unlocked : f)));
-                  toast('Flujo desbloqueado exitosamente', 'success');
-                } catch (err: any) {
-                  toast(err.message || 'Error al desbloquear', 'error');
-                }
-              }}
+              onClick={handleToggleLockActiveFlow}
               className="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-700 text-white font-semibold transition-colors"
             >
               Desbloquear Flujo
