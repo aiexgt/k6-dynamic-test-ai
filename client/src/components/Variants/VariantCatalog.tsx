@@ -384,26 +384,22 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     });
   }, [variants, selectedCategoryFilter, searchTerm]);
 
-  // Paginated Variants
-  const paginatedVariants = useMemo(() => {
-    const start = (variantPage - 1) * variantPageSize;
-    return filteredVariants.slice(start, start + variantPageSize);
-  }, [filteredVariants, variantPage, variantPageSize]);
-
-  // Grouped by Category map
-  const groupedVariants = useMemo(() => {
+  // 1. Group all filtered variants by category
+  const allGroupedCategories = useMemo(() => {
     const map = new Map<string, Variant[]>();
-    // Pre-populate with all defined categories in order
-    categories.forEach(cat => map.set(cat, []));
-    map.set('Sin Categoría', []);
+    if (selectedCategoryFilter !== 'ALL') {
+      map.set(selectedCategoryFilter, []);
+    } else {
+      categories.forEach(cat => map.set(cat, []));
+      map.set('Sin Categoría', []);
+    }
 
-    paginatedVariants.forEach(v => {
+    filteredVariants.forEach(v => {
       const cat = v.category && categories.includes(v.category) ? v.category : 'Sin Categoría';
       if (!map.has(cat)) map.set(cat, []);
       map.get(cat)!.push(v);
     });
 
-    // Remove empty categories if searching or if filtered
     const result: { category: string; items: Variant[] }[] = [];
     map.forEach((items, cat) => {
       if (items.length > 0 || (selectedCategoryFilter === cat && searchTerm === '')) {
@@ -411,7 +407,55 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
       }
     });
     return result;
-  }, [paginatedVariants, categories, selectedCategoryFilter, searchTerm]);
+  }, [filteredVariants, categories, selectedCategoryFilter, searchTerm]);
+
+  // 2. Partition into pages preserving ALL variants of each category that appears
+  const categoryPages = useMemo(() => {
+    if (allGroupedCategories.length === 0) return [];
+    if (selectedCategoryFilter !== 'ALL') {
+      return [allGroupedCategories];
+    }
+
+    const pages: { category: string; items: Variant[] }[][] = [];
+    let currentPageGroups: { category: string; items: Variant[] }[] = [];
+    let currentVariantsOnPage = 0;
+
+    for (const group of allGroupedCategories) {
+      if (currentPageGroups.length > 0 && currentVariantsOnPage >= variantPageSize) {
+        pages.push(currentPageGroups);
+        currentPageGroups = [];
+        currentVariantsOnPage = 0;
+      }
+      currentPageGroups.push(group);
+      currentVariantsOnPage += group.items.length;
+    }
+
+    if (currentPageGroups.length > 0) {
+      pages.push(currentPageGroups);
+    }
+
+    return pages;
+  }, [allGroupedCategories, variantPageSize, selectedCategoryFilter]);
+
+  const totalVariantPages = Math.max(1, categoryPages.length);
+  const currentCategoryPage = Math.min(Math.max(1, variantPage), totalVariantPages);
+  const groupedVariants = categoryPages[currentCategoryPage - 1] || [];
+  const paginatedVariants = useMemo(() => groupedVariants.flatMap(g => g.items), [groupedVariants]);
+
+  // Range of items currently displayed
+  const currentStartItem = useMemo(() => {
+    if (filteredVariants.length === 0) return 0;
+    let count = 0;
+    for (let i = 0; i < currentCategoryPage - 1; i++) {
+      count += (categoryPages[i] || []).reduce((acc, g) => acc + g.items.length, 0);
+    }
+    return count + 1;
+  }, [categoryPages, currentCategoryPage, filteredVariants.length]);
+
+  const currentEndItem = useMemo(() => {
+    if (filteredVariants.length === 0) return 0;
+    return Math.min(filteredVariants.length, currentStartItem + paginatedVariants.length - 1);
+  }, [currentStartItem, paginatedVariants.length, filteredVariants.length]);
 
   // Full-screen Variant Editor View
   if (isEditorOpen) {
@@ -682,12 +726,15 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
 
       {/* Pagination for Variant Catalog */}
       <Pagination
-        currentPage={variantPage}
+        currentPage={currentCategoryPage}
         totalItems={filteredVariants.length}
         pageSize={variantPageSize}
         onPageChange={setVariantPage}
         onPageSizeChange={setVariantPageSize}
         pageSizeOptions={[12, 24, 48, 96]}
+        customTotalPages={totalVariantPages}
+        customStartItem={currentStartItem}
+        customEndItem={currentEndItem}
       />
 
       {/* Modal de Detalle / Inspección de Ejecución de Variante */}

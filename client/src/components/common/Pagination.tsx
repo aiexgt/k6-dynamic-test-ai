@@ -9,6 +9,9 @@ interface PaginationProps {
   onPageSizeChange?: (pageSize: number) => void;
   pageSizeOptions?: number[];
   className?: string;
+  customTotalPages?: number;
+  customStartItem?: number;
+  customEndItem?: number;
 }
 
 export const Pagination: React.FC<PaginationProps> = ({
@@ -18,13 +21,22 @@ export const Pagination: React.FC<PaginationProps> = ({
   onPageChange,
   onPageSizeChange,
   pageSizeOptions = [10, 20, 50],
-  className = ''
+  className = '',
+  customTotalPages,
+  customStartItem,
+  customEndItem
 }) => {
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize));
+  const totalPages = customTotalPages !== undefined
+    ? Math.max(1, customTotalPages)
+    : Math.max(1, Math.ceil(totalItems / pageSize));
   const validPage = Math.min(Math.max(1, currentPage), totalPages);
 
-  const startItem = totalItems === 0 ? 0 : (validPage - 1) * pageSize + 1;
-  const endItem = Math.min(validPage * pageSize, totalItems);
+  const startItem = customStartItem !== undefined
+    ? customStartItem
+    : (totalItems === 0 ? 0 : (validPage - 1) * pageSize + 1);
+  const endItem = customEndItem !== undefined
+    ? customEndItem
+    : Math.min(validPage * pageSize, totalItems);
 
   if (totalItems === 0) return null;
 
