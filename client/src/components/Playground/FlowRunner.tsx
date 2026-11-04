@@ -34,6 +34,7 @@ import {
 } from '../../types';
 import { api } from '../../api';
 import { parseUrlToPathAndParams, buildUrlFromPathAndParams } from '../../utils/urlParams';
+import { areObjectsEqual } from '../../utils/objectUtils';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { StepDetailModal } from './StepDetailModal';
 import { SaveFlowModal } from './SaveFlowModal';
@@ -127,17 +128,61 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragEnabledIndex, setDragEnabledIndex] = useState<number | null>(null);
 
-  // Unsaved changes calculation
-  const serializeFlowState = (stepsList: FlowStepConfig[], currentDataset?: CsvDataset) => {
-    return JSON.stringify({
-      steps: stepsList.map(s => ({
+  // Limpieza estricta de pasos antes de guardar o serializar:
+  // Si las variables, endpoint o body NO fueron modificados respecto a la variante,
+  // NO se guardan en el paso del flujo para que continúen heredando dinámicamente de la variante.
+  const cleanStepsForSaving = (stepsList: FlowStepConfig[]): FlowStepConfig[] => {
+    return stepsList.map(s => {
+      const v = variants.find(variant => variant.id === s.variantId);
+      const vVars = v?.variables || v?.defaultVariables || {};
+
+      const isCustomizedVars =
+        s.overrideVariables !== undefined &&
+        Object.keys(s.overrideVariables).length > 0 &&
+        !areObjectsEqual(s.overrideVariables, vVars);
+
+      const isCustomizedEndpoint =
+        s.endpoint !== undefined &&
+        s.endpoint.trim() !== '' &&
+        s.endpoint.trim() !== (v?.endpoint || '').trim();
+
+      const isCustomizedBody =
+        s.body !== undefined &&
+        s.body.trim() !== '' &&
+        s.body.trim() !== (v?.body || '').trim();
+
+      const cleaned: FlowStepConfig = {
+        id: s.id,
         category: s.category,
         variantId: s.variantId,
-        skipped: !!s.skipped,
-        overrideVariables: s.overrideVariables || {},
-        endpoint: s.endpoint,
-        body: s.body
-      })),
+        skipped: !!s.skipped
+      };
+
+      if (isCustomizedVars) {
+        cleaned.overrideVariables = s.overrideVariables;
+      }
+      if (isCustomizedEndpoint) {
+        cleaned.endpoint = s.endpoint;
+      }
+      if (isCustomizedBody) {
+        cleaned.body = s.body;
+      }
+      if (s.method && s.method !== v?.method) {
+        cleaned.method = s.method;
+      }
+      if (s.apiType && s.apiType !== v?.apiType) {
+        cleaned.apiType = s.apiType;
+      }
+
+      return cleaned;
+    });
+  };
+
+  // Unsaved changes calculation con sanitización dinámica
+  const serializeFlowState = (stepsList: FlowStepConfig[], currentDataset?: CsvDataset) => {
+    const cleaned = cleanStepsForSaving(stepsList);
+    return JSON.stringify({
+      steps: cleaned,
       dataset: currentDataset
         ? {
             name: currentDataset.name,
@@ -256,40 +301,21 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       (cat, idx) => {
         const catVariants = vList.filter(v => v.category === cat);
         const selVariant = catVariants.length > 0 ? catVariants[0] : null;
-        const defaultVars = selVariant?.variables || selVariant?.defaultVariables || {};
         return {
           id: 'step-' + idx + '-' + Date.now().toString(36),
           category: cat,
           variantId: selVariant ? selVariant.id : null,
-          skipped: false,
-          overrideVariables: defaultVars,
-          endpoint: selVariant?.endpoint,
-          body: selVariant?.body,
-          method: selVariant?.method,
-          apiType: selVariant?.apiType
+          skipped: false
+          // overrideVariables, endpoint y body quedan undefined para heredar de la variante
         };
       }
     );
 
     setSteps(initial);
     setDataset(undefined);
-    const overridesMap: Record<string, string> = {};
-    const paramsMap: Record<string, string> = {};
-    const bodyMap: Record<string, string> = {};
-    initial.forEach(s => {
-      if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
-        overridesMap[s.id] = JSON.stringify(s.overrideVariables, null, 2);
-      }
-      if (s.endpoint) {
-        paramsMap[s.id] = parseUrlToPathAndParams(s.endpoint).paramsJson;
-      }
-      if (s.body !== undefined) {
-        bodyMap[s.id] = s.body;
-      }
-    });
-    setRawJsonOverrides(overridesMap);
-    setStepParamsJson(paramsMap);
-    setStepBodyOverrides(bodyMap);
+    setRawJsonOverrides({});
+    setStepParamsJson({});
+    setStepBodyOverrides({});
     setSavedSnapshot(serializeFlowState(initial, undefined));
     resetRunState();
   };
@@ -297,16 +323,32 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const applySavedFlow = (flow: SavedFlow, currentVariants: Variant[] = variants) => {
     const paramsMap: Record<string, string> = {};
     const bodyMap: Record<string, string> = {};
+    const overridesMap: Record<string, string> = {};
+
     const normalized: FlowStepConfig[] = (flow.steps || []).map((s, idx) => {
       const v = currentVariants.find(varItem => varItem.id === s.variantId);
-      const defaultVars = v?.variables || v?.defaultVariables || {};
-      const overrideVars =
-        s.overrideVariables && Object.keys(s.overrideVariables).length > 0
-          ? s.overrideVariables
-          : defaultVars;
+      const vVars = v?.variables || v?.defaultVariables || {};
+
+      // Si s.overrideVariables es idéntico a las variables de la variante, NO está personalizado:
+      // debe quedar undefined para que cualquier cambio futuro en la variante del catálogo se refleje aquí.
+      const isCustomizedVars =
+        s.overrideVariables !== undefined &&
+        Object.keys(s.overrideVariables).length > 0 &&
+        !areObjectsEqual(s.overrideVariables, vVars);
+
+      const isCustomizedEndpoint =
+        s.endpoint !== undefined &&
+        s.endpoint.trim() !== '' &&
+        s.endpoint.trim() !== (v?.endpoint || '').trim();
+
+      const isCustomizedBody =
+        s.body !== undefined &&
+        s.body.trim() !== '' &&
+        s.body.trim() !== (v?.body || '').trim();
+
       const stepId = s.id || 'step-' + idx + '-' + Date.now().toString(36);
-      const effectiveEndpoint = s.endpoint !== undefined ? s.endpoint : v?.endpoint;
-      const effectiveBody = s.body !== undefined ? s.body : v?.body;
+      const effectiveEndpoint = isCustomizedEndpoint ? s.endpoint : v?.endpoint;
+      const effectiveBody = isCustomizedBody ? s.body : v?.body;
 
       if (effectiveEndpoint) {
         paramsMap[stepId] = parseUrlToPathAndParams(effectiveEndpoint).paramsJson;
@@ -314,15 +356,18 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       if (effectiveBody !== undefined) {
         bodyMap[stepId] = effectiveBody;
       }
+      if (isCustomizedVars) {
+        overridesMap[stepId] = JSON.stringify(s.overrideVariables, null, 2);
+      }
 
       return {
         id: stepId,
         category: s.category || 'General',
         variantId: s.variantId || null,
         skipped: s.skipped || false,
-        overrideVariables: overrideVars,
-        endpoint: s.endpoint,
-        body: s.body,
+        overrideVariables: isCustomizedVars ? s.overrideVariables : undefined,
+        endpoint: isCustomizedEndpoint ? s.endpoint : undefined,
+        body: isCustomizedBody ? s.body : undefined,
         method: s.method || v?.method,
         apiType: s.apiType || v?.apiType
       };
@@ -332,12 +377,6 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setDataset(flow.dataset);
     setStepParamsJson(paramsMap);
     setStepBodyOverrides(bodyMap);
-    const overridesMap: Record<string, string> = {};
-    normalized.forEach(s => {
-      if (s.overrideVariables && Object.keys(s.overrideVariables).length > 0) {
-        overridesMap[s.id] = JSON.stringify(s.overrideVariables, null, 2);
-      }
-    });
     setRawJsonOverrides(overridesMap);
     setSavedSnapshot(serializeFlowState(normalized, flow.dataset));
     if (typeof window !== 'undefined' && flow.id) {
@@ -396,18 +435,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     const chosenCat = categoryToAdd || (categories.length > 0 ? categories[0] : 'General');
     const catVariants = variants.filter(v => v.category === chosenCat);
     const selVariant = catVariants.length > 0 ? catVariants[0] : null;
-    const defaultVars = selVariant?.variables || selVariant?.defaultVariables || {};
     const newStep: FlowStepConfig = {
       id: 'step-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
       category: chosenCat,
       variantId: selVariant ? selVariant.id : null,
-      skipped: false,
-      overrideVariables: defaultVars
+      skipped: false
+      // Sin overrideVariables, endpoint ni body: hereda dinámicamente de la variante
     };
     setSteps(prev => [...prev, newStep]);
-    if (selVariant) {
-      setRawJsonOverrides(r => ({ ...r, [newStep.id]: JSON.stringify(defaultVars, null, 2) }));
-    }
   };
 
   // Remove Step
@@ -437,7 +472,6 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const handleCategoryChange = (stepId: string, newCategory: string) => {
     const matchingVariants = variants.filter(v => v.category === newCategory);
     const selVariant = matchingVariants.length > 0 ? matchingVariants[0] : null;
-    const defaultVars = selVariant?.variables || selVariant?.defaultVariables || {};
     setSteps(prev =>
       prev.map(s => {
         if (s.id === stepId) {
@@ -445,23 +479,34 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             ...s,
             category: newCategory,
             variantId: selVariant ? selVariant.id : null,
-            overrideVariables: defaultVars
+            overrideVariables: undefined,
+            endpoint: undefined,
+            body: undefined
           };
         }
         return s;
       })
     );
-    if (selVariant) {
-      setRawJsonOverrides(r => ({ ...r, [stepId]: JSON.stringify(defaultVars, null, 2) }));
-    }
+    setRawJsonOverrides(r => {
+      const next = { ...r };
+      delete next[stepId];
+      return next;
+    });
+    setStepParamsJson(p => {
+      const next = { ...p };
+      delete next[stepId];
+      return next;
+    });
+    setStepBodyOverrides(b => {
+      const next = { ...b };
+      delete next[stepId];
+      return next;
+    });
   };
 
-  // Variant Change -> Loads that variant's default variables into the step's overrideVariables
+  // Variant Change -> Reset step overrides to inherit fresh from the new variant
   const handleVariantChange = (stepId: string, variantId: string) => {
     const newVariant = variants.find(v => v.id === variantId);
-    const defaultVars = newVariant?.variables || newVariant?.defaultVariables || {};
-    const defaultEp = newVariant?.endpoint;
-    const defaultBody = newVariant?.body;
 
     setSteps(prev =>
       prev.map(s =>
@@ -469,9 +514,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
           ? {
               ...s,
               variantId,
-              overrideVariables: defaultVars,
-              endpoint: defaultEp,
-              body: defaultBody,
+              overrideVariables: undefined,
+              endpoint: undefined,
+              body: undefined,
               method: newVariant?.method,
               apiType: newVariant?.apiType
             }
@@ -479,29 +524,32 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       )
     );
 
-    if (newVariant) {
-      setRawJsonOverrides(prev => ({
-        ...prev,
-        [stepId]: JSON.stringify(defaultVars, null, 2)
-      }));
-      if (defaultEp) {
-        setStepParamsJson(prev => ({
-          ...prev,
-          [stepId]: parseUrlToPathAndParams(defaultEp).paramsJson
-        }));
-      }
-      if (defaultBody !== undefined) {
-        setStepBodyOverrides(prev => ({
-          ...prev,
-          [stepId]: defaultBody
-        }));
-      }
-    }
+    setRawJsonOverrides(r => {
+      const next = { ...r };
+      delete next[stepId];
+      return next;
+    });
+    setStepParamsJson(p => {
+      const next = { ...p };
+      delete next[stepId];
+      return next;
+    });
+    setStepBodyOverrides(b => {
+      const next = { ...b };
+      delete next[stepId];
+      return next;
+    });
   };
 
   // Step Endpoint Change (with bidirectional sync to query params JSON)
   const handleStepEndpointChange = (stepId: string, newUrl: string) => {
-    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, endpoint: newUrl } : s)));
+    const step = steps.find(s => s.id === stepId);
+    const selectedVar = variants.find(v => v.id === step?.variantId);
+    const isCustomized = (selectedVar?.endpoint || '').trim() !== newUrl.trim();
+
+    setSteps(prev =>
+      prev.map(s => (s.id === stepId ? { ...s, endpoint: isCustomized ? newUrl : undefined } : s))
+    );
     const parsed = parseUrlToPathAndParams(newUrl);
     setStepParamsJson(prev => ({ ...prev, [stepId]: parsed.paramsJson }));
   };
@@ -514,13 +562,23 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     const currentEndpoint =
       step?.endpoint !== undefined ? step.endpoint : selectedVar?.endpoint || '';
     const updatedUrl = buildUrlFromPathAndParams(currentEndpoint, newParamsJson);
-    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, endpoint: updatedUrl } : s)));
+    const isCustomized = (selectedVar?.endpoint || '').trim() !== updatedUrl.trim();
+
+    setSteps(prev =>
+      prev.map(s => (s.id === stepId ? { ...s, endpoint: isCustomized ? updatedUrl : undefined } : s))
+    );
   };
 
   // Step Body Override Change
   const handleStepBodyChange = (stepId: string, newBody: string) => {
+    const step = steps.find(s => s.id === stepId);
+    const selectedVar = variants.find(v => v.id === step?.variantId);
+    const isCustomized = (selectedVar?.body || '').trim() !== newBody.trim();
+
     setStepBodyOverrides(prev => ({ ...prev, [stepId]: newBody }));
-    setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, body: newBody } : s)));
+    setSteps(prev =>
+      prev.map(s => (s.id === stepId ? { ...s, body: isCustomized ? newBody : undefined } : s))
+    );
   };
 
   // Reset Step REST config (endpoint and body) to variant defaults
@@ -528,15 +586,20 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     const step = steps.find(s => s.id === stepId);
     const selectedVar = variants.find(v => v.id === step?.variantId);
     if (!selectedVar) return;
-    const defaultEndpoint = selectedVar.endpoint || '';
-    const defaultBody = selectedVar.body || '';
     setSteps(prev =>
-      prev.map(s => (s.id === stepId ? { ...s, endpoint: defaultEndpoint, body: defaultBody } : s))
+      prev.map(s => (s.id === stepId ? { ...s, endpoint: undefined, body: undefined } : s))
     );
-    const parsed = parseUrlToPathAndParams(defaultEndpoint);
-    setStepParamsJson(prev => ({ ...prev, [stepId]: parsed.paramsJson }));
-    setStepBodyOverrides(prev => ({ ...prev, [stepId]: defaultBody }));
-    toast(`Endpoint y body restablecidos al valor de "${selectedVar.name}"`, 'info');
+    setStepParamsJson(p => {
+      const next = { ...p };
+      delete next[stepId];
+      return next;
+    });
+    setStepBodyOverrides(b => {
+      const next = { ...b };
+      delete next[stepId];
+      return next;
+    });
+    toast(`Endpoint y body restablecidos. Ahora este paso hereda de "${selectedVar.name}"`, 'info');
   };
 
   // Skip Toggle
@@ -544,50 +607,52 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, skipped: !s.skipped } : s)));
   };
 
-  // Override variables toggle - ensures variant's variables are pre-populated if empty
+  // Override variables toggle
   const handleToggleExpandVars = (stepId: string) => {
-    setExpandedVars(prev => {
-      const willBeOpen = !prev[stepId];
-      if (willBeOpen) {
-        const step = steps.find(s => s.id === stepId);
-        const variant = variants.find(v => v.id === step?.variantId);
-        if (step && variant) {
-          if (!rawJsonOverrides[stepId]) {
-            const varsToUse =
-              step.overrideVariables && Object.keys(step.overrideVariables).length > 0
-                ? step.overrideVariables
-                : variant.variables || variant.defaultVariables || {};
-            const pretty = JSON.stringify(varsToUse, null, 2);
-            setRawJsonOverrides(r => ({ ...r, [stepId]: pretty }));
-            setSteps(curr =>
-              curr.map(s => (s.id === stepId ? { ...s, overrideVariables: varsToUse } : s))
-            );
-          }
-        }
-      }
-      return { ...prev, [stepId]: willBeOpen };
-    });
+    setExpandedVars(prev => ({ ...prev, [stepId]: !prev[stepId] }));
   };
 
-  // Reset step variables to the variant's original default
+  // Reset step variables to the variant's original default (restores dynamic inheritance)
   const handleResetStepVariablesToDefault = (stepId: string) => {
     const step = steps.find(s => s.id === stepId);
     const variant = variants.find(v => v.id === step?.variantId);
     if (!variant) return;
-    const defaultVars = variant.variables || variant.defaultVariables || {};
-    const pretty = JSON.stringify(defaultVars, null, 2);
-    setRawJsonOverrides(r => ({ ...r, [stepId]: pretty }));
-    setSteps(curr => curr.map(s => (s.id === stepId ? { ...s, overrideVariables: defaultVars } : s)));
-    toast(`Variables restablecidas al valor por defecto de "${variant.name}"`, 'info');
+    setRawJsonOverrides(r => {
+      const next = { ...r };
+      delete next[stepId];
+      return next;
+    });
+    setSteps(curr =>
+      curr.map(s => (s.id === stepId ? { ...s, overrideVariables: undefined } : s))
+    );
+    toast(`Variables restablecidas. Ahora este paso hereda dinámicamente de "${variant.name}"`, 'info');
   };
 
   const handleOverrideJsonChange = (stepId: string, text: string) => {
     setRawJsonOverrides(prev => ({ ...prev, [stepId]: text }));
     try {
       const parsed = JSON.parse(text || '{}');
-      setSteps(prev => prev.map(s => (s.id === stepId ? { ...s, overrideVariables: parsed } : s)));
+      const step = steps.find(s => s.id === stepId);
+      const variant = variants.find(v => v.id === step?.variantId);
+      const vVars = variant?.variables || variant?.defaultVariables || {};
+      const isCustomized = !areObjectsEqual(parsed, vVars);
+
+      setSteps(prev =>
+        prev.map(s =>
+          s.id === stepId
+            ? { ...s, overrideVariables: isCustomized ? parsed : undefined }
+            : s
+        )
+      );
     } catch {
-      // JSON syntax being written
+      // Mientras el usuario edita JSON incompleto, mantener flag de personalización
+      setSteps(prev =>
+        prev.map(s =>
+          s.id === stepId
+            ? { ...s, overrideVariables: s.overrideVariables || {} }
+            : s
+        )
+      );
     }
   };
 
@@ -602,10 +667,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     }
     try {
       const existing = savedFlows.find(f => f.id === flowId);
+      const cleanedSteps = cleanStepsForSaving(steps);
       const updated = await api.updateFlow(flowId, {
         name: name || existing?.name || 'Flujo de Checkout',
         description: description !== undefined ? description : existing?.description,
-        steps,
+        steps: cleanedSteps,
         dataset
       });
       setSavedFlows(prev => prev.map(f => (f.id === updated.id ? updated : f)));
@@ -613,7 +679,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       if (typeof window !== 'undefined' && updated.id) {
         localStorage.setItem('flowrunner_last_flow_id', updated.id);
       }
-      setSavedSnapshot(serializeFlowState(steps, dataset));
+      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset));
       onFlowChange?.(updated.id);
       toast(`¡Flujo "${updated.name}" guardado con éxito!`, 'success');
     } catch (err: any) {
@@ -628,13 +694,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       return;
     }
     try {
-      const created = await api.createFlow({ name, description, steps, dataset });
+      const cleanedSteps = cleanStepsForSaving(steps);
+      const created = await api.createFlow({ name, description, steps: cleanedSteps, dataset });
       setSavedFlows(prev => [...prev, created]);
       setSelectedFlowId(created.id);
       if (typeof window !== 'undefined' && created.id) {
         localStorage.setItem('flowrunner_last_flow_id', created.id);
       }
-      setSavedSnapshot(serializeFlowState(steps, dataset));
+      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset));
       onFlowChange?.(created.id);
       toast(`¡Flujo "${created.name}" guardado como nuevo!`, 'success');
     } catch (err: any) {
@@ -1266,14 +1333,25 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                       <button
                         type="button"
                         onClick={() => handleToggleExpandVars(step.id)}
-                        className={`p-1.5 rounded-lg border text-xs transition-colors ${
+                        className={`relative p-1.5 rounded-lg border text-xs transition-colors ${
                           expandedVars[step.id]
                             ? 'border-orange-500 text-orange-500 bg-orange-50 dark:bg-orange-950/20'
+                            : (step.overrideVariables !== undefined || step.endpoint !== undefined || step.body !== undefined)
+                            ? 'border-amber-400 text-amber-600 dark:text-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
                             : 'border-slate-200 dark:border-slate-800 text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
                         }`}
-                        title={selectedVar?.apiType === 'REST' ? 'Configurar Query Params y Body JSON' : 'Sobrescribir variables GraphQL'}
+                        title={
+                          (step.overrideVariables !== undefined || step.endpoint !== undefined || step.body !== undefined)
+                            ? 'Paso con variables o payload personalizados en este flujo'
+                            : selectedVar?.apiType === 'REST'
+                            ? 'Configurar Query Params y Body (hereda de variante)'
+                            : 'Variables GraphQL (hereda de variante)'
+                        }
                       >
                         <Sliders className="w-3.5 h-3.5" />
+                        {(step.overrideVariables !== undefined || step.endpoint !== undefined || step.body !== undefined) && (
+                          <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white dark:ring-slate-900" />
+                        )}
                       </button>
                     )}
 
@@ -1421,21 +1499,42 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                             )}
                           </div>
 
-                          <button
-                            type="button"
-                            onClick={() => handleResetStepRestToDefault(step.id)}
-                            className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1 transition-colors"
-                            title="Restablecer endpoint y body al valor por defecto de la variante"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Restablecer defecto de variante</span>
-                          </button>
+                          <div className="flex items-center gap-2">
+                            {step.endpoint !== undefined || step.body !== undefined ? (
+                              <>
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                  title="Endpoint o Body personalizado solo para este flujo"
+                                >
+                                  ⚡ Customizado
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleResetStepRestToDefault(step.id)}
+                                  className="text-[11px] font-semibold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:underline flex items-center gap-1 transition-colors"
+                                  title="Restablecer endpoint y body para volver a heredar de la variante"
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                  <span>Restablecer defecto de variante</span>
+                                </button>
+                              </>
+                            ) : (
+                              <span
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                title="Heredando dinámicamente de la variante. Si la variante se modifica en el catálogo, este paso se actualizará automáticamente."
+                              >
+                                🔗 Dinámico (Hereda de variante)
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {(stepRestSubTabs[step.id] || 'params') === 'params' ? (
                           <div>
                             <p className="text-[11px] text-slate-400 mb-1.5">
-                              Edita los parámetros de la URL en formato JSON. Se sincronizarán automáticamente con la URL de la petición.
+                              {step.endpoint !== undefined
+                                ? 'Parámetros personalizados para este paso. Se sincronizan en vivo con la URL.'
+                                : 'Mostrando parámetros por defecto de la variante. Al editarlos se personalizarán para este flujo.'}
                             </p>
                             <CodeEditor
                               language="json"
@@ -1455,7 +1554,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                         ) : (
                           <div>
                             <p className="text-[11px] text-slate-400 mb-1.5">
-                              Cuerpo / Payload JSON de la petición REST. Puedes usar variables dinámicas como <code className="font-mono bg-slate-200 dark:bg-slate-800 px-1 rounded">{"{{cartId}}"}</code>.
+                              {step.body !== undefined
+                                ? 'Payload personalizado para este paso. Puedes usar variables dinámicas como {{cartId}}.'
+                                : 'Mostrando payload por defecto de la variante. Al editarlo se personalizará para este flujo.'}
                             </p>
                             <CodeEditor
                               language="json"
@@ -1478,25 +1579,46 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                       /* Sección GraphQL estándar */
                       <div className="space-y-2">
                         <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-2">
                             <Sliders className="w-3.5 h-3.5 text-orange-500" />
                             <span className="font-bold text-slate-800 dark:text-slate-200">
                               Variables del Paso (GraphQL)
                             </span>
-                            <span className="text-[11px] text-slate-400">
-                              (Asociadas a este paso en el flujo)
-                            </span>
+                            {step.overrideVariables !== undefined ? (
+                              <span
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20"
+                                title="Este paso tiene variables personalizadas específicas para este flujo"
+                              >
+                                ⚡ Personalizadas en este flujo
+                              </span>
+                            ) : (
+                              <span
+                                className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                                title="Hereda dinámicamente de la variante. Si la variante se edita en el catálogo, este paso tomará los nuevos valores automáticamente."
+                              >
+                                🔗 Dinámico (Hereda de variante)
+                              </span>
+                            )}
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => handleResetStepVariablesToDefault(step.id)}
-                            className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline flex items-center gap-1 transition-colors"
-                            title="Restablecer al JSON original de la variante"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Restablecer defecto de variante</span>
-                          </button>
+
+                          {step.overrideVariables !== undefined && (
+                            <button
+                              type="button"
+                              onClick={() => handleResetStepVariablesToDefault(step.id)}
+                              className="text-[11px] font-semibold text-orange-600 dark:text-orange-400 hover:text-orange-700 dark:hover:text-orange-300 hover:underline flex items-center gap-1 transition-colors"
+                              title="Restablecer para volver a heredar dinámicamente de la variante del catálogo"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>Restablecer defecto de variante</span>
+                            </button>
+                          )}
                         </div>
+
+                        <p className="text-[11px] text-slate-400">
+                          {step.overrideVariables !== undefined
+                            ? 'Este paso guardará estas variables personalizadas exclusivamente para este flujo.'
+                            : 'Mostrando variables actuales de la variante. Si la variante se edita en el catálogo, se actualizarán aquí automáticamente.'}
+                        </p>
 
                         <CodeEditor
                           language="json"
@@ -1506,8 +1628,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                           value={
                             rawJsonOverrides[step.id] ??
                             JSON.stringify(
-                              step.overrideVariables &&
-                                Object.keys(step.overrideVariables).length > 0
+                              step.overrideVariables !== undefined
                                 ? step.overrideVariables
                                 : selectedVar?.variables ||
                                     selectedVar?.defaultVariables ||

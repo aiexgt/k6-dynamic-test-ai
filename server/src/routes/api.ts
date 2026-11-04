@@ -233,17 +233,62 @@ apiRouter.get('/flows/:id', (req: Request, res: Response) => {
   return res.json(flow);
 });
 
+function sortObjectKeys(obj: any): any {
+  if (obj === null || typeof obj !== 'object') return obj;
+  if (Array.isArray(obj)) return obj.map(sortObjectKeys);
+  const sorted: Record<string, any> = {};
+  for (const key of Object.keys(obj).sort()) {
+    sorted[key] = sortObjectKeys(obj[key]);
+  }
+  return sorted;
+}
+
+function areObjectsEqual(a: any, b: any): boolean {
+  if (a === b) return true;
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  try {
+    return JSON.stringify(sortObjectKeys(a)) === JSON.stringify(sortObjectKeys(b));
+  } catch {
+    return false;
+  }
+}
+
+function sanitizeStepsForFlow(steps: FlowStepConfig[]): FlowStepConfig[] {
+  if (!Array.isArray(steps)) return [];
+  return steps.map(s => {
+    const cleaned: FlowStepConfig = { ...s };
+    if (s.variantId) {
+      const variant = Database.getVariantById(s.variantId);
+      if (variant) {
+        const vVars = variant.variables || variant.defaultVariables || {};
+        if (s.overrideVariables && areObjectsEqual(s.overrideVariables, vVars)) {
+          delete cleaned.overrideVariables;
+        }
+        if (s.endpoint !== undefined && s.endpoint.trim() === (variant.endpoint || '').trim()) {
+          delete cleaned.endpoint;
+        }
+        if (s.body !== undefined && s.body.trim() === (variant.body || '').trim()) {
+          delete cleaned.body;
+        }
+      }
+    }
+    return cleaned;
+  });
+}
+
 apiRouter.post('/flows', (req: Request, res: Response) => {
   const user = extractUser(req);
   const { name, description, steps } = req.body;
   if (!name || !steps || !Array.isArray(steps)) {
     return res.status(400).json({ error: 'name and steps array are required' });
   }
+  const cleanedSteps = sanitizeStepsForFlow(steps);
   const newFlow: SavedFlow = {
     id: 'flow-' + Date.now().toString(36),
     name,
     description: description || '',
-    steps,
+    steps: cleanedSteps,
     dataset: req.body.dataset,
     isLocked: false,
     createdBy: user.email,
@@ -264,9 +309,11 @@ apiRouter.put('/flows/:id', (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Flow not found' });
   }
 
+  const stepsToSave = req.body.steps ? sanitizeStepsForFlow(req.body.steps) : existing.steps;
   const updated: SavedFlow = {
     ...existing,
     ...req.body,
+    steps: stepsToSave,
     id: existing.id,
     updatedBy: user.email,
     updatedByName: user.name,
