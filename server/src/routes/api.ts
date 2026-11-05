@@ -682,6 +682,11 @@ apiRouter.delete('/analytics/variant-metrics', (_req: Request, res: Response) =>
   return res.json({ success: true, message: 'Métricas de variantes vaciadas' });
 });
 
+apiRouter.delete('/analytics/variant-metrics/:id', (req: Request, res: Response) => {
+  Database.deleteVariantMetric(req.params.id);
+  return res.json({ success: true, message: 'Métrica de variante eliminada' });
+});
+
 // --- SETTINGS ---
 apiRouter.get('/settings', (_req: Request, res: Response) => {
   return res.json(Database.getSettings());

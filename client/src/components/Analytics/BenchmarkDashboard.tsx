@@ -184,6 +184,24 @@ export const BenchmarkDashboard: React.FC = () => {
     }
   };
 
+  const handleDeleteSingleVariantMetric = async (variantId: string, variantName: string) => {
+    const ok = await confirm({
+      title: 'Eliminar Registro de Variante',
+      message: `¿Estás seguro de que deseas eliminar las métricas registradas para "${variantName}"?`,
+      confirmText: 'Eliminar Registro',
+      isDestructive: true
+    });
+    if (!ok) return;
+
+    try {
+      await api.deleteVariantMetric(variantId);
+      setVariantMetrics(prev => prev.filter(m => m.variantId !== variantId));
+      toast(`Métricas de "${variantName}" eliminadas`, 'success');
+    } catch (err: any) {
+      toast(`Error al eliminar métrica: ${err.message}`, 'error');
+    }
+  };
+
   // Filtered History
   const filteredHistory = history.filter(h => {
     if (typeFilter === 'FLOW') return h.executionType === 'FLOW';
@@ -220,6 +238,7 @@ export const BenchmarkDashboard: React.FC = () => {
     return (
       <ExecutionDetailView
         execution={selectedExecution}
+        history={history}
         onBack={handleCloseExecution}
       />
     );
@@ -666,6 +685,7 @@ export const BenchmarkDashboard: React.FC = () => {
                       <th className="px-4 py-3 text-center">Incorrectas</th>
                       <th className="px-4 py-3">Tasa Éxito</th>
                       <th className="px-4 py-3">Última Ejecución</th>
+                      <th className="px-4 py-3 text-right">Acciones</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
@@ -763,6 +783,17 @@ export const BenchmarkDashboard: React.FC = () => {
                                 : 'N/A'}
                             </span>
                           </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={() => handleDeleteSingleVariantMetric(item.variantId, item.variantName)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                            title={`Eliminar métricas registradas de ${item.variantName}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </td>
                       </tr>
                     ))}

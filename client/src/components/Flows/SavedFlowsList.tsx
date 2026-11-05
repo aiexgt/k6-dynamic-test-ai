@@ -13,7 +13,9 @@ import {
   Lock,
   Unlock,
   User,
-  History
+  History,
+  LayoutGrid,
+  List
 } from 'lucide-react';
 import { SavedFlow, Variant, StepExecutionResult, Environment } from '../../types';
 import { api } from '../../api';
@@ -74,6 +76,20 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
   const [flowPage, setFlowPage] = useState(1);
   const [flowPageSize, setFlowPageSize] = useState(12);
 
+  const [viewMode, setViewMode] = useState<'cards' | 'list'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('saved_flows_view_mode') as 'cards' | 'list') || 'cards';
+    }
+    return 'cards';
+  });
+
+  const handleToggleViewMode = (mode: 'cards' | 'list') => {
+    setViewMode(mode);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('saved_flows_view_mode', mode);
+    }
+  };
+
   const [versionHistoryTarget, setVersionHistoryTarget] = useState<SavedFlow | null>(null);
 
   useEffect(() => {
@@ -90,10 +106,123 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
     }
   };
 
+  // Genera colección Postman v2.1.0 completa y lista para importar
+  const generatePostmanCollection = (flow: SavedFlow) => {
+    const activeEnv = environments.find(e => e.id === activeEnvironmentId) || environments[0];
+    const postmanItems = (flow.steps || [])
+      .filter(s => !s.skipped)
+      .map((step, idx) => {
+        const v = variants.find(variant => variant.id === step.variantId);
+        const isRest = (step.apiType || v?.apiType) === 'REST';
+        const method = step.method || v?.method || (isRest ? 'GET' : 'POST');
+        const stepName = `${idx + 1}. ${v?.name || step.category || 'Paso'}`;
+
+        const headers: { key: string; value: string; type: string }[] = [
+          { key: 'Content-Type', value: 'application/json', type: 'text' }
+        ];
+
+        const mergedHeaders = {
+          ...(activeEnv?.customHeaders || {}),
+          ...(v?.customHeaders || {}),
+          ...(step.customHeaders || {})
+        };
+        for (const [k, val] of Object.entries(mergedHeaders)) {
+          if (k.toLowerCase() !== 'content-type') {
+            headers.push({ key: k, value: String(val), type: 'text' });
+          }
+        }
+
+        let rawUrl = '';
+        if (isRest) {
+          const ep = step.endpoint !== undefined && step.endpoint !== ''
+            ? step.endpoint
+            : v?.endpoint || '';
+          rawUrl = '{{magentoRestUrl}}' + (ep.startsWith('/') ? ep : '/' + ep);
+        } else {
+          rawUrl = '{{magentoUrl}}';
+        }
+
+        let bodyObj: any = undefined;
+        if (isRest) {
+          if (method !== 'GET') {
+            const bodyContent = step.body !== undefined && step.body !== '' ? step.body : v?.body || '';
+            bodyObj = {
+              mode: 'raw',
+              raw: bodyContent,
+              options: {
+                raw: {
+                  language: 'json'
+                }
+              }
+            };
+          }
+        } else {
+          // GraphQL
+          const queryText = step.query || v?.query || '';
+          const variablesObj = step.overrideVariables || v?.variables || v?.defaultVariables || {};
+          bodyObj = {
+            mode: 'graphql',
+            graphql: {
+              query: queryText,
+              variables: JSON.stringify(variablesObj, null, 2)
+            }
+          };
+        }
+
+        return {
+          name: stepName,
+          request: {
+            method: method,
+            header: headers,
+            body: bodyObj,
+            url: {
+              raw: rawUrl,
+              host: [isRest ? '{{magentoRestUrl}}' : '{{magentoUrl}}']
+            },
+            description: v?.description || `Paso #${idx + 1} del flujo ${flow.name}`
+          },
+          response: []
+        };
+      });
+
+    return {
+      info: {
+        _postman_id: `flow-${flow.id}-${Date.now().toString(36)}`,
+        name: flow.name,
+        description: flow.description || `Flujo "${flow.name}" exportado desde Magento Flow Runner con ${postmanItems.length} pasos.`,
+        schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json'
+      },
+      item: postmanItems,
+      variable: [
+        {
+          key: 'magentoUrl',
+          value: activeEnv?.magentoUrl || 'https://tu-tienda.com/graphql',
+          type: 'string'
+        },
+        {
+          key: 'magentoRestUrl',
+          value: activeEnv?.magentoRestUrl || 'https://tu-tienda.com/rest/default/V1',
+          type: 'string'
+        },
+        {
+          key: 'cartId',
+          value: '',
+          type: 'string'
+        },
+        {
+          key: 'customerToken',
+          value: '',
+          type: 'string'
+        }
+      ]
+    };
+  };
+
   const handleExportSingle = (flow: SavedFlow) => {
-    const filename = `flujo-${sanitizeFilename(flow.name)}.json`;
-    downloadJson(filename, flow);
-    toast(`Flujo "${flow.name}" exportado`, 'success');
+    const collection = generatePostmanCollection(flow);
+    const filename = `${sanitizeFilename(flow.name)}.postman_collection.json`;
+    downloadJson(filename, collection);
+    toast(`Colección Postman "${flow.name}" descargada con éxito`, 'success');
   };
 
   const handleToggleLock = async (flow: SavedFlow) => {
@@ -245,6 +374,34 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
             {filteredFlows.length !== flows.length ? ` de ${flows.length}` : ''})
           </span>
         </h1>
+
+        {/* Selector de modo de vista: Tarjetas o Lista */}
+        <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+          <button
+            onClick={() => handleToggleViewMode('cards')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+              viewMode === 'cards'
+                ? 'bg-orange-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+            title="Vista de Tarjetas"
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            <span>Tarjetas</span>
+          </button>
+          <button
+            onClick={() => handleToggleViewMode('list')}
+            className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+              viewMode === 'list'
+                ? 'bg-orange-600 text-white shadow-xs'
+                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+            }`}
+            title="Vista de Lista"
+          >
+            <List className="w-3.5 h-3.5" />
+            <span>Lista</span>
+          </button>
+        </div>
       </div>
 
       {/* Buscador de Flujos */}
@@ -295,7 +452,193 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
             Limpiar búsqueda
           </button>
         </div>
+      ) : viewMode === 'list' ? (
+        /* Vista de Lista / Tabla */
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-sm overflow-hidden transition-colors">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 dark:bg-slate-950 text-slate-400 font-mono border-b border-slate-200 dark:border-slate-800">
+                <tr>
+                  <th className="px-4 py-3">Flujo</th>
+                  <th className="px-4 py-3 text-center">Pasos</th>
+                  <th className="px-4 py-3 text-center">Estado</th>
+                  <th className="px-4 py-3">Autor</th>
+                  <th className="px-4 py-3">Última Modificación</th>
+                  <th className="px-4 py-3 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                {paginatedFlows.map(flow => {
+                  const activeSteps = (flow.steps || []).filter(s => !s.skipped);
+
+                  return (
+                    <tr
+                      key={flow.id}
+                      className="hover:bg-slate-50 dark:hover:bg-slate-800/40 transition-colors"
+                    >
+                      {/* Name & Description */}
+                      <td className="px-4 py-3 min-w-[240px]">
+                        {editingFlowId === flow.id ? (
+                          <div className="space-y-1.5 my-1">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="text"
+                                value={editingName}
+                                onChange={e => setEditingName(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === 'Enter') handleSaveEdit(flow.id);
+                                  if (e.key === 'Escape') handleCancelEdit();
+                                }}
+                                placeholder="Nombre del flujo"
+                                autoFocus
+                                className="flex-1 bg-slate-50 dark:bg-slate-800 border border-orange-500 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 dark:text-slate-100 outline-none shadow-xs"
+                              />
+                              <button
+                                onClick={() => handleSaveEdit(flow.id)}
+                                className="p-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white transition-colors"
+                                title="Guardar nombre"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={handleCancelEdit}
+                                className="p-1 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-500 transition-colors"
+                                title="Cancelar"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <input
+                              type="text"
+                              value={editingDesc}
+                              onChange={e => setEditingDesc(e.target.value)}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter') handleSaveEdit(flow.id);
+                                if (e.key === 'Escape') handleCancelEdit();
+                              }}
+                              placeholder="Descripción opcional"
+                              className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg px-2.5 py-1 text-[11px] text-slate-600 dark:text-slate-300 outline-none"
+                            />
+                          </div>
+                        ) : (
+                          <div>
+                            <div
+                              onClick={() => handleStartEdit(flow)}
+                              className="font-bold text-slate-900 dark:text-slate-100 hover:text-orange-600 dark:hover:text-orange-400 cursor-pointer flex items-center gap-1.5 group/title"
+                              title="Clic para editar nombre y descripción"
+                            >
+                              <span>{flow.name}</span>
+                              <Edit2 className="w-3 h-3 text-slate-400 opacity-0 group-hover/title:opacity-100 transition-opacity" />
+                            </div>
+                            {flow.description && (
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 line-clamp-1 mt-0.5">
+                                {flow.description}
+                              </p>
+                            )}
+                          </div>
+                        )}
+                      </td>
+
+                      {/* Steps count */}
+                      <td className="px-4 py-3 text-center font-mono">
+                        <span className="text-[10px] font-bold bg-orange-500/10 text-orange-600 dark:text-orange-400 px-2 py-0.5 rounded">
+                          {activeSteps.length} pasos
+                        </span>
+                      </td>
+
+                      {/* Locked State */}
+                      <td className="px-4 py-3 text-center">
+                        {flow.isLocked ? (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleLock(flow)}
+                            className="cursor-pointer text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-950/40 text-amber-600 dark:text-amber-400 border border-amber-200 dark:border-amber-800/60 inline-flex items-center gap-1 hover:bg-amber-100 transition-colors"
+                            title={`Flujo bloqueado por ${flow.lockedByName || flow.lockedBy || 'otro usuario'}. Clic para desbloquear.`}
+                          >
+                            <Lock className="w-2.5 h-2.5 text-amber-500" />
+                            <span>{flow.lockedByName ? flow.lockedByName.split(' ')[0] : 'Bloqueado'}</span>
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleLock(flow)}
+                            className="cursor-pointer text-[10px] text-slate-400 hover:text-amber-600 dark:hover:text-amber-400 inline-flex items-center gap-1 px-2 py-0.5 rounded hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Clic para bloquear flujo"
+                          >
+                            <Unlock className="w-2.5 h-2.5" />
+                            <span>Libre</span>
+                          </button>
+                        )}
+                      </td>
+
+                      {/* Author */}
+                      <td className="px-4 py-3 text-slate-500 dark:text-slate-400 font-mono text-[11px] truncate max-w-[140px]">
+                        {flow.updatedByName || flow.createdByName || 'Equipo'}
+                      </td>
+
+                      {/* Date */}
+                      <td className="px-4 py-3 text-slate-400 font-mono text-[11px] whitespace-nowrap">
+                        {new Date(flow.updatedAt || flow.createdAt).toLocaleDateString()}
+                      </td>
+
+                      {/* Actions */}
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleQuickRun(flow)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-bold shadow-xs transition-colors"
+                            title="Ejecutar flujo"
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>Ejecutar</span>
+                          </button>
+                          <button
+                            onClick={() => onLoadFlowInPlayground(flow)}
+                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-semibold transition-colors"
+                            title="Cargar en Playground"
+                          >
+                            <span>Cargar</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                          <button
+                            onClick={() => handleExportSingle(flow)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20 transition-colors"
+                            title="Descargar colección completa para Postman"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleClone(flow)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Duplicar flujo"
+                          >
+                            <CopyPlus className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setVersionHistoryTarget(flow)}
+                            className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                            title="Historial de versiones y rollback"
+                          >
+                            <History className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(flow)}
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/20 transition-colors"
+                            title="Mover flujo a la papelera"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
       ) : (
+        /* Vista de Tarjetas (Cards Grid) */
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3.5">
           {paginatedFlows.map(flow => {
             const activeSteps = (flow.steps || []).filter(s => !s.skipped);
@@ -470,7 +813,7 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
                       <button
                         onClick={() => handleExportSingle(flow)}
                         className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                        title="Exportar flujo a JSON"
+                        title="Descargar colección completa para Postman"
                       >
                         <Download className="w-3.5 h-3.5" />
                       </button>

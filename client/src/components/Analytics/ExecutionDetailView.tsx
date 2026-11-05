@@ -1,24 +1,73 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
   CheckCircle2,
   XCircle,
   Copy,
-  Check
+  Check,
+  BarChart3
 } from 'lucide-react';
 import { FlowExecutionResponse, StepExecutionResult } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 
 interface ExecutionDetailViewProps {
   execution: FlowExecutionResponse;
+  history?: FlowExecutionResponse[];
   onBack: () => void;
 }
 
-export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execution, onBack }) => {
+export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execution, history = [], onBack }) => {
   const { toast } = useFeedback();
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const [activeTab, setActiveTab] = useState<'tests' | 'request' | 'response' | 'variables'>('tests');
   const [copied, setCopied] = useState(false);
+
+  // Filter all runs of this flow/target from history
+  const targetRuns = useMemo(() => {
+    if (!history || history.length === 0 || !execution.targetName) return [];
+    return history.filter(
+      h =>
+        h.targetName === execution.targetName &&
+        (execution.executionType ? h.executionType === execution.executionType : true)
+    );
+  }, [history, execution.targetName, execution.executionType]);
+
+  const historicalStats = useMemo(() => {
+    if (targetRuns.length === 0) return null;
+    const totalRuns = targetRuns.length;
+    const successfulRuns = targetRuns.filter(r => r.status === 'SUCCESS').length;
+    const avgTotalTimeMs = Math.round(
+      targetRuns.reduce((acc, r) => acc + (r.totalTimeMs || 0), 0) / totalRuns
+    );
+    const avgSuccessRate = Math.round((successfulRuns / totalRuns) * 100);
+
+    // Calculate average duration per step
+    const stepDurations: Record<string, { totalMs: number; count: number }> = {};
+    for (const run of targetRuns) {
+      if (!run.steps) continue;
+      run.steps.forEach((st, idx) => {
+        const key = st.stepId || st.variantName || `step-${idx}`;
+        if (!stepDurations[key]) {
+          stepDurations[key] = { totalMs: 0, count: 0 };
+        }
+        stepDurations[key].totalMs += st.durationMs || 0;
+        stepDurations[key].count += 1;
+      });
+    }
+
+    const stepAverages: Record<string, number> = {};
+    for (const [key, data] of Object.entries(stepDurations)) {
+      stepAverages[key] = Math.round(data.totalMs / data.count);
+    }
+
+    return {
+      totalRuns,
+      successfulRuns,
+      avgTotalTimeMs,
+      avgSuccessRate,
+      stepAverages
+    };
+  }, [targetRuns]);
 
   const steps = execution.steps || [];
   const currentStep: StepExecutionResult | undefined = steps[selectedStepIndex];
@@ -79,6 +128,91 @@ export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execut
         </div>
       </div>
 
+      {/* Historical Flow Average Banner */}
+      {historicalStats && (
+        <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border border-orange-200 dark:border-orange-900/50 rounded-2xl p-4 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 rounded-xl bg-orange-500/15 text-orange-600 dark:text-orange-400">
+                <BarChart3 className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    Promedio Histórico de las Pruebas
+                  </h4>
+                  <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
+                    {historicalStats.totalRuns} {historicalStats.totalRuns === 1 ? 'ejecución total' : 'ejecuciones totales'}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Métricas acumuladas calculadas sobre todas las pruebas realizadas para <strong className="text-slate-700 dark:text-slate-300">{execution.targetName}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-6 sm:gap-8">
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Latencia Promedio
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span className="text-lg font-bold font-mono text-orange-600 dark:text-orange-400">
+                    {historicalStats.avgTotalTimeMs}
+                  </span>
+                  <span className="text-xs text-slate-400 font-mono">ms</span>
+                </div>
+              </div>
+
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
+
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Tasa Éxito Promedio
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span
+                    className={`text-lg font-bold font-mono ${
+                      historicalStats.avgSuccessRate >= 90
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : historicalStats.avgSuccessRate >= 70
+                        ? 'text-amber-500'
+                        : 'text-rose-500'
+                    }`}
+                  >
+                    {historicalStats.avgSuccessRate}%
+                  </span>
+                  <span className="text-[10px] text-slate-400 font-mono">
+                    ({historicalStats.successfulRuns}/{historicalStats.totalRuns})
+                  </span>
+                </div>
+              </div>
+
+              <div className="h-8 w-px bg-slate-200 dark:bg-slate-800" />
+
+              <div>
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider block">
+                  Esta Ejecución
+                </span>
+                <div className="flex items-baseline gap-1 mt-0.5">
+                  <span
+                    className={`text-xs font-mono font-bold ${
+                      execution.totalTimeMs <= historicalStats.avgTotalTimeMs
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-amber-500'
+                    }`}
+                  >
+                    {execution.totalTimeMs <= historicalStats.avgTotalTimeMs
+                      ? `-${historicalStats.avgTotalTimeMs - execution.totalTimeMs} ms vs prom`
+                      : `+${execution.totalTimeMs - historicalStats.avgTotalTimeMs} ms vs prom`}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* KPI Cards Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm">
@@ -86,6 +220,11 @@ export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execut
           <div className="mt-1 flex items-baseline gap-1 text-slate-900 dark:text-slate-100 font-mono font-bold text-xl text-orange-600 dark:text-orange-400">
             {execution.totalTimeMs} <span className="text-xs text-slate-400 font-normal">ms</span>
           </div>
+          {historicalStats && (
+            <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+              Promedio: {historicalStats.avgTotalTimeMs} ms
+            </span>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-3 shadow-sm">
@@ -135,6 +274,8 @@ export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execut
               const hasErr = !!(st.errors && st.errors.length > 0) || st.status >= 400;
               const testsCount = st.testResults?.length || 0;
               const testsPassed = st.testResults?.filter(t => t.passed).length || 0;
+              const stepKey = st.stepId || st.variantName || `step-${idx}`;
+              const stepAvg = historicalStats?.stepAverages[stepKey];
 
               return (
                 <button
@@ -169,7 +310,14 @@ export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execut
                           {testsPassed}/{testsCount} tests
                         </span>
                       )}
-                      <span className="text-orange-600 dark:text-orange-400 font-bold">{st.durationMs}ms</span>
+                      <div className="text-right">
+                        <span className="text-orange-600 dark:text-orange-400 font-bold">{st.durationMs}ms</span>
+                        {stepAvg !== undefined && (
+                          <span className="text-[9px] text-slate-400 block font-normal" title="Promedio histórico de este paso">
+                            prom: {stepAvg}ms
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </button>
@@ -190,6 +338,11 @@ export const ExecutionDetailView: React.FC<ExecutionDetailViewProps> = ({ execut
                   </h3>
                   <p className="text-xs text-slate-400 font-mono">
                     Categoría: {currentStep.category} • Duración: {currentStep.durationMs} ms
+                    {historicalStats?.stepAverages[currentStep.stepId || currentStep.variantName || `step-${selectedStepIndex}`] !== undefined && (
+                      <span className="text-slate-500 dark:text-slate-400 font-normal">
+                        {' '}(Promedio histórico: <strong className="text-orange-500 font-semibold">{historicalStats.stepAverages[currentStep.stepId || currentStep.variantName || `step-${selectedStepIndex}`]} ms</strong>)
+                      </span>
+                    )}
                   </p>
                 </div>
 

@@ -17,7 +17,6 @@ import {
   X,
   ShieldCheck,
   Variable,
-  Download,
   Play,
   RefreshCw,
   FlaskConical,
@@ -32,7 +31,6 @@ import { VariantTesterModal } from './VariantTesterModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { Pagination } from '../common/Pagination';
 import { useFeedback } from '../../context/FeedbackContext';
-import { downloadJson, sanitizeFilename } from '../../utils/fileTransfer';
 
 interface VariantCatalogProps {
   onNavigateToCategories?: () => void;
@@ -276,12 +274,6 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     }
   };
 
-  const handleExportSingle = (variant: Variant) => {
-    const filename = `variante-${sanitizeFilename(variant.name)}.json`;
-    downloadJson(filename, variant);
-    toast(`Variante "${variant.name}" exportada`, 'success');
-  };
-
   const handleToggleViewMode = (mode: 'list' | 'cards') => {
     setViewMode(mode);
     localStorage.setItem('variant_view_mode', mode);
@@ -359,11 +351,57 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     }
   };
 
-  const handleCopyQuery = (e: React.MouseEvent, id: string, query: string) => {
+  const generateVariantCurl = (variant: Variant): string => {
+    const isRest = variant.apiType === 'REST';
+    const method = variant.method || (isRest ? 'GET' : 'POST');
+    const targetEnv = environments.find(e => e.id === variant.environmentId) || environments[0];
+
+    const baseUrl = isRest
+      ? (targetEnv?.magentoRestUrl || '{{magentoRestUrl}}')
+      : (targetEnv?.magentoUrl || '{{magentoUrl}}');
+
+    let fullUrl = baseUrl;
+    if (isRest && variant.endpoint) {
+      const ep = variant.endpoint.trim();
+      if (ep.startsWith('http://') || ep.startsWith('https://')) {
+        fullUrl = ep;
+      } else {
+        fullUrl = baseUrl.replace(/\/+$/, '') + (ep.startsWith('/') ? ep : '/' + ep);
+      }
+    }
+
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      ...(targetEnv?.customHeaders || {}),
+      ...(variant.customHeaders || {})
+    };
+
+    let curl = `curl --location --request ${method} '${fullUrl}'`;
+    for (const [k, v] of Object.entries(headers)) {
+      curl += ` \\\n  --header '${k}: ${v}'`;
+    }
+
+    if (isRest) {
+      if (method !== 'GET' && variant.body && variant.body.trim()) {
+        curl += ` \\\n  --data-raw '${variant.body.replace(/'/g, "'\\''")}'`;
+      }
+    } else {
+      const payload = {
+        query: variant.query,
+        variables: variant.variables || variant.defaultVariables || {}
+      };
+      curl += ` \\\n  --data-raw '${JSON.stringify(payload, null, 2).replace(/'/g, "'\\''")}'`;
+    }
+
+    return curl;
+  };
+
+  const handleCopyCurl = (e: React.MouseEvent, variant: Variant) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(query);
-    setCopiedId(id);
-    toast('GraphQL copiado al portapapeles', 'info');
+    const curl = generateVariantCurl(variant);
+    navigator.clipboard.writeText(curl);
+    setCopiedId(variant.id);
+    toast('Comando cURL copiado al portapapeles (listo para Postman o terminal)', 'success');
     setTimeout(() => setCopiedId(null), 2000);
   };
 
@@ -929,26 +967,15 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
               </button>
 
               <button
-                onClick={e => handleCopyQuery(e, variant.id, variant.query)}
+                onClick={e => handleCopyCurl(e, variant)}
                 className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
-                title="Copiar GraphQL"
+                title="Copiar comando cURL (Postman / Terminal)"
               >
                 {copiedId === variant.id ? (
                   <Check className="w-3.5 h-3.5 text-emerald-500" />
                 ) : (
                   <Copy className="w-3.5 h-3.5" />
                 )}
-              </button>
-
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  handleExportSingle(variant);
-                }}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
-                title="Exportar variante a JSON"
-              >
-                <Download className="w-3.5 h-3.5" />
               </button>
 
               <button
@@ -1018,11 +1045,21 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
                       <span>Probar en Sandbox</span>
                     </button>
                     <button
-                      onClick={e => handleCopyQuery(e, variant.id, variant.query)}
-                      className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1"
+                      onClick={e => handleCopyCurl(e, variant)}
+                      className="text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 flex items-center gap-1 font-semibold"
+                      title="Copiar comando cURL listo para Postman o terminal"
                     >
-                      <Copy className="w-3 h-3" />
-                      <span>Copiar</span>
+                      {copiedId === variant.id ? (
+                        <>
+                          <Check className="w-3 h-3 text-emerald-500" />
+                          <span className="text-emerald-500">Copiado</span>
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="w-3 h-3" />
+                          <span>Copiar cURL</span>
+                        </>
+                      )}
                     </button>
                   </div>
                 </div>
@@ -1181,8 +1218,9 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
         <div className="mt-3 pt-2.5 border-t border-slate-100 dark:border-slate-800 space-y-2">
           <div className="flex items-center justify-between gap-2">
             <button
-              onClick={e => handleCopyQuery(e, variant.id, variant.query)}
+              onClick={e => handleCopyCurl(e, variant)}
               className="text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 flex items-center gap-1 transition-colors"
+              title="Copiar comando cURL (listo para Postman o terminal)"
             >
               {copiedId === variant.id ? (
                 <>
@@ -1192,7 +1230,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
               ) : (
                 <>
                   <Copy className="w-3 h-3" />
-                  <span>Copiar</span>
+                  <span>Copiar cURL</span>
                 </>
               )}
             </button>
@@ -1224,13 +1262,6 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
           </div>
 
           <div className="flex items-center justify-end gap-1 pt-1.5 border-t border-slate-100/70 dark:border-slate-800/60">
-            <button
-              onClick={() => handleExportSingle(variant)}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-orange-500 hover:bg-orange-50 dark:hover:bg-orange-950/30 transition-colors"
-              title="Exportar variante a JSON"
-            >
-              <Download className="w-3.5 h-3.5" />
-            </button>
             <button
               onClick={() => handleClone(variant.id)}
               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

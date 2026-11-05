@@ -40,9 +40,15 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       if (activeFlow) {
-        setMode('overwrite');
-        setName(activeFlow.name);
-        setDescription(activeFlow.description || '');
+        if (activeFlow.isLocked) {
+          setMode('new');
+          setName(`${activeFlow.name} (Copia)`);
+          setDescription(activeFlow.description || '');
+        } else {
+          setMode('overwrite');
+          setName(activeFlow.name);
+          setDescription(activeFlow.description || '');
+        }
       } else {
         setMode('new');
         setName(`TC-${new Date().toISOString().substring(5, 10)}`);
@@ -52,6 +58,7 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
   }, [isOpen, activeFlow]);
 
   const handleModeChange = (newMode: 'overwrite' | 'new') => {
+    if (activeFlow?.isLocked && newMode === 'overwrite') return;
     setMode(newMode);
     if (newMode === 'new' && activeFlow) {
       setName(`${activeFlow.name} (Copia)`);
@@ -67,7 +74,7 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
     e.preventDefault();
     if (!name.trim()) return;
 
-    if (mode === 'overwrite' && activeFlow && onOverwrite) {
+    if (mode === 'overwrite' && activeFlow && !activeFlow.isLocked && onOverwrite) {
       onOverwrite(activeFlow.id, name.trim(), description.trim());
     } else {
       onSaveNew(name.trim(), description.trim());
@@ -87,7 +94,7 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
               <BookmarkPlus className="w-4 h-4 text-orange-500" />
             )}
             <h3 className="text-xs font-bold text-slate-900 dark:text-slate-100">
-              {activeFlow ? 'Guardar Flujo' : 'Guardar Nuevo Flujo'}
+              {activeFlow && !activeFlow.isLocked ? 'Guardar Flujo' : 'Guardar Nuevo Flujo'}
             </h3>
           </div>
           <button
@@ -101,40 +108,44 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
         {/* Option switcher if there is an active flow */}
         {activeFlow && (
           <div className="px-5 pt-4 pb-1 space-y-2">
-            {activeFlow.isLocked && (
-              <div className="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-[11px] flex items-center gap-1.5">
-                <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                <span>
-                  Flujo marcado como bloqueado por <strong>{activeFlow.lockedByName || activeFlow.lockedBy || 'un compañero'}</strong>.
-                </span>
+            {activeFlow.isLocked ? (
+              <div className="p-3 rounded-xl bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800/60 text-amber-800 dark:text-amber-200 text-xs space-y-1">
+                <div className="flex items-center gap-1.5 font-bold">
+                  <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                  <span>Flujo Bloqueado</span>
+                </div>
+                <p className="text-[11px] text-amber-700/90 dark:text-amber-300/80 leading-relaxed">
+                  Este flujo está bloqueado por <strong>{activeFlow.lockedByName || activeFlow.lockedBy || 'otro usuario'}</strong> para proteger la prueba. No se puede sobrescribir, solo guardar <strong>Como Nuevo</strong>.
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleModeChange('overwrite')}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                    mode === 'overwrite'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <Save className="w-3.5 h-3.5 text-orange-500" />
+                  <span>Sobrescribir</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleModeChange('new')}
+                  className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
+                    mode === 'new'
+                      ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
+                      : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <CopyPlus className="w-3.5 h-3.5 text-orange-500" />
+                  <span>Como Nuevo</span>
+                </button>
               </div>
             )}
-            <div className="grid grid-cols-2 p-1 bg-slate-100 dark:bg-slate-800/80 rounded-xl gap-1">
-              <button
-                type="button"
-                onClick={() => handleModeChange('overwrite')}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
-                  mode === 'overwrite'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <Save className="w-3.5 h-3.5 text-orange-500" />
-                <span>Sobrescribir</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => handleModeChange('new')}
-                className={`flex items-center justify-center gap-1.5 py-1.5 px-2 rounded-lg text-xs font-semibold transition-all ${
-                  mode === 'new'
-                    ? 'bg-white dark:bg-slate-900 text-slate-900 dark:text-slate-100 shadow-xs'
-                    : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                <CopyPlus className="w-3.5 h-3.5 text-orange-500" />
-                <span>Como Nuevo</span>
-              </button>
-            </div>
           </div>
         )}
 
@@ -190,7 +201,7 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
               type="submit"
               className="px-4 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
-              {mode === 'overwrite' ? (
+              {mode === 'overwrite' && !activeFlow?.isLocked ? (
                 <>
                   <Save className="w-3.5 h-3.5" />
                   <span>Actualizar Flujo</span>
@@ -198,7 +209,7 @@ export const SaveFlowModal: React.FC<SaveFlowModalProps> = ({
               ) : (
                 <>
                   <BookmarkPlus className="w-3.5 h-3.5" />
-                  <span>Guardar Nuevo</span>
+                  <span>Guardar Como Nuevo</span>
                 </>
               )}
             </button>

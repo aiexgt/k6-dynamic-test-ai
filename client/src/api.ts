@@ -455,6 +455,14 @@ export const api = {
     if (!res.ok) throw new Error('Error clearing variant metrics');
   },
 
+  async deleteVariantMetric(variantId: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/analytics/variant-metrics/${encodeURIComponent(variantId)}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Error deleting variant metric');
+  },
+
   // Settings
   async getSettings(): Promise<EnvironmentSettings> {
     const res = await fetch(`${API_BASE}/settings`, { headers: getAuthHeaders() });

@@ -1461,6 +1461,17 @@ export class Database {
     }
   }
 
+  static deleteVariantMetric(variantId: string): void {
+    this.getVariantMetrics();
+    this.variantMetricsCache = this.variantMetricsCache.filter(m => m.variantId !== variantId);
+    this.variantMetricsLoaded = true;
+    writeJsonFile('variant_metrics.json', this.variantMetricsCache);
+
+    if (localPgPool && isLocalPgConnected) {
+      localPgPool.query('DELETE FROM local_variant_metrics WHERE variant_id = $1', [variantId]).catch(console.error);
+    }
+  }
+
   // --- CENTRAL ONLINE AUTH & PERMISSIONS ---
 
   /**
