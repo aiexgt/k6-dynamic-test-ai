@@ -313,11 +313,15 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
           resultsCollector[baseStep.id] = response.stepResult;
           
-          // Formatear el nombre en el reporte para identificar la fila si hay dataset
+          // Formatear el nombre en el reporte para identificar la fila si hay dataset y priorizar nombre de variante
           const rowPrefix = rowsToRun.length > 1 ? `[Fila ${rIdx + 1}] ` : '';
+          const currentVariant = variants.find(v => v.id === baseStep.variantId);
+          const variantDisplayName = currentVariant?.name || baseStep.category || response.stepResult.variantName;
+
           const taggedStepResult: StepExecutionResult = {
             ...response.stepResult,
-            category: rowPrefix + response.stepResult.category
+            variantName: variantDisplayName,
+            category: rowPrefix + variantDisplayName
           };
 
           executedStepsList.push(response.stepResult);
@@ -349,7 +353,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                   : globalDelayMs;
 
               if (effectiveSleep > 0) {
-                const stepTitle = baseStep.category || `Paso #${i + 1}`;
+                const stepTitle = currentVariant?.name || baseStep.category || `Paso #${i + 1}`;
                 const ok = await sleepWithAbort(effectiveSleep, stepTitle);
                 if (!ok || abortControllerRef.current) {
                   break;
@@ -358,7 +362,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
             }
           } else {
             flowFailed = true;
-            failedCat = baseStep.category || 'Paso';
+            failedCat = currentVariant?.name || baseStep.category || 'Paso';
             setFailedStepResult(response.stepResult);
 
             if (hasFailedTests) {
@@ -389,7 +393,8 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
         } catch (err: any) {
           if (abortControllerRef.current) break;
           flowFailed = true;
-          failedCat = baseStep.category || 'Paso';
+          const currentVariant = variants.find(v => v.id === baseStep.variantId);
+          failedCat = currentVariant?.name || baseStep.category || 'Paso';
           setFailureType('CONNECTION_ERROR');
           failedErrMsg = err.message || 'Error de conexión con el servicio';
           setStepStatusMap(prev => ({ ...prev, [baseStep.id]: 'failed' }));
@@ -751,7 +756,8 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
               if (!step) return null;
               const variant = variants.find(v => v.id === step.variantId);
               const status = stepStatusMap[step.id] || 'pending';
-              const title = step.category || variant?.category || `Paso ${idx + 1}`;
+              const fullTitle = variant?.name || step.category || `Paso ${idx + 1}`;
+              const title = fullTitle.length > 32 ? `${fullTitle.slice(0, 30)}…` : fullTitle;
               const isCurrent = currentStepIndex === idx && flowStatus === 'running';
               const isCompleted = status === 'success';
               const isFailed = status === 'failed';
@@ -759,6 +765,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
               const isRightSide = pt.x <= 500;
               const labelX = isRightSide ? pt.x + 22 : pt.x - 22;
               const textAnchor = isRightSide ? 'start' : 'end';
+              const pillWidth = Math.max(70, title.length * 8 + 26);
 
               return (
                 <g key={step.id} className="transition-all duration-300">
@@ -800,12 +807,13 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                     <circle cx={pt.x} cy={pt.y} r="3" fill="#dc2626" />
                   )}
 
-                  {/* STEP TITLE PILL (Clean Apple typography, only title) */}
+                  {/* STEP TITLE PILL (Clean Apple typography, displays Variant Name) */}
                   <g transform={`translate(${labelX}, ${pt.y})`}>
+                    <title>{fullTitle}</title>
                     <rect
-                      x={isRightSide ? 0 : - (title.length * 9 + 28)}
+                      x={isRightSide ? 0 : -pillWidth}
                       y="-15"
-                      width={title.length * 9 + 28}
+                      width={pillWidth}
                       height="30"
                       rx="15"
                       fill={
@@ -1131,7 +1139,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                   {dataset && dataset.rows && dataset.rows.length > 1
                     ? `[Fila ${currentDatasetRowIndex + 1}/${dataset.rows.length}] Goku subiendo la montaña: `
                     : 'Goku subiendo la montaña: '}
-                  {activeSteps[currentStepIndex]?.category || variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || 'Petición en curso'}
+                  {variants.find(v => v.id === activeSteps[currentStepIndex]?.variantId)?.name || activeSteps[currentStepIndex]?.category || 'Petición en curso'}
                 </span>
               </div>
               <button

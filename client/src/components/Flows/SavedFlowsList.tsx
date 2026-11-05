@@ -388,20 +388,6 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
                     </>
                   )}
 
-                  <div className="mt-2.5 flex flex-wrap gap-1">
-                    {(flow.steps || []).map((step, idx) => (
-                      <span
-                        key={step.id || idx}
-                        className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-                          step.skipped
-                            ? 'bg-slate-100 dark:bg-slate-800 text-slate-400 line-through'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300'
-                        }`}
-                      >
-                        {step.category}
-                      </span>
-                    ))}
-                  </div>
                   {(flow.createdByName || flow.updatedByName) && (
                     <div className="mt-2 text-[10px] text-slate-400 flex items-center justify-between gap-1.5 truncate">
                       <div className="flex items-center gap-1 truncate">
