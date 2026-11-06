@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Plus, Trash2, Edit2, Server, Save, Sparkles, CopyPlus } from 'lucide-react';
+import { X, Plus, Trash2, Edit2, Server, Save, CopyPlus } from 'lucide-react';
 import { Environment } from '../../types';
 import { useFeedback } from '../../context/FeedbackContext';
 
@@ -34,7 +34,8 @@ export const EnvironmentModal: React.FC<EnvironmentModalProps> = ({
   const { prompt } = useFeedback();
   const [editingEnv, setEditingEnv] = useState<Partial<Environment> | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
-  const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
+  const [graphqlHeaderRows, setGraphqlHeaderRows] = useState<HeaderRow[]>([]);
+  const [restHeaderRows, setRestHeaderRows] = useState<HeaderRow[]>([]);
 
   // Lock body scroll and handle Escape key
   useEffect(() => {
@@ -61,73 +62,135 @@ export const EnvironmentModal: React.FC<EnvironmentModalProps> = ({
       useMockSimulator: false,
       customHeaders: { 'Content-Type': 'application/json' }
     });
-    setHeaderRows([
-      { id: '1', key: 'Content-Type', value: 'application/json' },
-      { id: '2', key: 'AuthToken', value: '' }
+    setGraphqlHeaderRows([
+      { id: 'g1', key: 'Content-Type', value: 'application/json' },
+      { id: 'g2', key: 'AuthToken', value: '' }
+    ]);
+    setRestHeaderRows([
+      { id: 'r1', key: 'Content-Type', value: 'application/json' },
+      { id: 'r2', key: 'Authorization', value: 'Bearer {{customerToken}}' }
     ]);
     setIsFormOpen(true);
   };
 
   const handleOpenEdit = (env: Environment) => {
     setEditingEnv(env);
-    const rows = Object.entries(env.customHeaders || {}).map(([k, v], idx) => ({
-      id: `hdr-${idx}-${Date.now().toString(36)}`,
+    let gqlHeaders: Record<string, string> = env.graphqlHeaders ? { ...env.graphqlHeaders } : {};
+    let rstHeaders: Record<string, string> = env.restHeaders ? { ...env.restHeaders } : {};
+
+    if (Object.keys(gqlHeaders).length === 0 && Object.keys(rstHeaders).length === 0 && env.customHeaders) {
+      for (const [k, v] of Object.entries(env.customHeaders)) {
+        if (typeof v === 'object' && v !== null && ('value' in v || 'graphql' in v || 'rest' in v)) {
+          if ((v as any).graphql !== false) gqlHeaders[k] = String((v as any).value ?? '');
+          if ((v as any).rest !== false) rstHeaders[k] = String((v as any).value ?? '');
+        } else if (typeof v === 'string') {
+          gqlHeaders[k] = v;
+          rstHeaders[k] = v;
+        }
+      }
+    }
+
+    const gRows = Object.entries(gqlHeaders).map(([k, v], idx) => ({
+      id: `g-${idx}-${Date.now().toString(36)}`,
       key: k,
       value: String(v)
     }));
-    setHeaderRows(
-      rows.length > 0
-        ? rows
-        : [{ id: '1', key: 'Content-Type', value: 'application/json' }]
+    setGraphqlHeaderRows(
+      gRows.length > 0 ? gRows : [{ id: 'g1', key: 'Content-Type', value: 'application/json' }]
+    );
+
+    const rRows = Object.entries(rstHeaders).map(([k, v], idx) => ({
+      id: `r-${idx}-${Date.now().toString(36)}`,
+      key: k,
+      value: String(v)
+    }));
+    setRestHeaderRows(
+      rRows.length > 0 ? rRows : [{ id: 'r1', key: 'Content-Type', value: 'application/json' }]
     );
     setIsFormOpen(true);
   };
 
-  const handleAddHeaderRow = (presetKey = '', presetValue = '') => {
-    setHeaderRows(prev => [
+  const handleAddGraphqlHeader = (presetKey = '', presetValue = '') => {
+    setGraphqlHeaderRows(prev => [
       ...prev,
       {
-        id: 'hdr-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+        id: 'g-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
         key: presetKey,
         value: presetValue
       }
     ]);
   };
 
-  const handleRemoveHeaderRow = (id: string) => {
-    setHeaderRows(prev => prev.filter(r => r.id !== id));
+  const handleRemoveGraphqlHeader = (id: string) => {
+    setGraphqlHeaderRows(prev => prev.filter(r => r.id !== id));
   };
 
-  const handleHeaderChange = (id: string, field: 'key' | 'value', val: string) => {
-    setHeaderRows(prev => prev.map(r => (r.id === id ? { ...r, [field]: val } : r)));
+  const handleGraphqlHeaderChange = (id: string, field: 'key' | 'value', val: string) => {
+    setGraphqlHeaderRows(prev => prev.map(r => (r.id === id ? { ...r, [field]: val } : r)));
+  };
+
+  const handleAddRestHeader = (presetKey = '', presetValue = '') => {
+    setRestHeaderRows(prev => [
+      ...prev,
+      {
+        id: 'r-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 5),
+        key: presetKey,
+        value: presetValue
+      }
+    ]);
+  };
+
+  const handleRemoveRestHeader = (id: string) => {
+    setRestHeaderRows(prev => prev.filter(r => r.id !== id));
+  };
+
+  const handleRestHeaderChange = (id: string, field: 'key' | 'value', val: string) => {
+    setRestHeaderRows(prev => prev.map(r => (r.id === id ? { ...r, [field]: val } : r)));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingEnv?.name || !editingEnv?.magentoUrl) return;
 
-    const parsedHeaders: Record<string, string> = {};
-    headerRows.forEach(r => {
+    const parsedGqlHeaders: Record<string, string> = {};
+    graphqlHeaderRows.forEach(r => {
       const k = r.key.trim();
-      if (k) {
-        parsedHeaders[k] = r.value.trim();
-      }
+      if (k) parsedGqlHeaders[k] = r.value.trim();
     });
+
+    const parsedRestHeaders: Record<string, string> = {};
+    restHeaderRows.forEach(r => {
+      const k = r.key.trim();
+      if (k) parsedRestHeaders[k] = r.value.trim();
+    });
+
+    const parsedCustomHeaders: Record<string, any> = {};
+    for (const [k, v] of Object.entries(parsedGqlHeaders)) {
+      parsedCustomHeaders[k] = {
+        value: v,
+        graphql: true,
+        rest: Boolean(parsedRestHeaders[k])
+      };
+    }
+    for (const [k, v] of Object.entries(parsedRestHeaders)) {
+      if (!parsedCustomHeaders[k]) {
+        parsedCustomHeaders[k] = {
+          value: v,
+          graphql: false,
+          rest: true
+        };
+      }
+    }
 
     onSaveEnvironment({
       ...editingEnv,
-      customHeaders: parsedHeaders
+      graphqlHeaders: parsedGqlHeaders,
+      restHeaders: parsedRestHeaders,
+      customHeaders: parsedCustomHeaders
     });
     setIsFormOpen(false);
     setEditingEnv(null);
   };
-
-  const commonHeaderPresets = [
-    { label: 'AuthToken', key: 'AuthToken', val: '' },
-    { label: 'X-Client-Type', key: 'X-Client-Type', val: '1' },
-    { label: 'Authorization', key: 'Authorization', val: 'Bearer ' },
-    { label: 'Content-Type', key: 'Content-Type', val: 'application/json' }
-  ];
 
   return createPortal(
     <div className="fixed inset-0 z-[99999] flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm animate-in fade-in duration-150">
@@ -313,82 +376,117 @@ export const EnvironmentModal: React.FC<EnvironmentModalProps> = ({
                 </label>
               </div>
 
-              {/* Headers Manager Row by Row */}
-              <div className="space-y-2 pt-1 border-t border-slate-200 dark:border-slate-800">
+              {/* GraphQL Headers */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
                 <div className="flex items-center justify-between">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                      Custom HTTP Headers
+                    <label className="block text-xs font-semibold text-orange-600 dark:text-orange-400">
+                      Cabeceras GraphQL
                     </label>
                     <span className="text-[11px] text-slate-400">
-                      Configura los headers individuales enviados a Magento
+                      Enviadas en peticiones GraphQL hacia este entorno
                     </span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => handleAddHeaderRow()}
+                    onClick={() => handleAddGraphqlHeader()}
                     className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-semibold transition-colors"
                   >
                     <Plus className="w-3 h-3 text-orange-500" />
-                    <span>Agregar Header</span>
+                    <span>+ Header GQL</span>
                   </button>
                 </div>
 
-                {/* Quick Presets */}
-                <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-slate-400 flex items-center gap-1">
-                    <Sparkles className="w-3 h-3 text-amber-500" /> Presets:
-                  </span>
-                  {commonHeaderPresets.map(preset => {
-                    const alreadyExists = headerRows.some(r => r.key.toLowerCase() === preset.key.toLowerCase());
-                    return (
-                      <button
-                        key={preset.key}
-                        type="button"
-                        disabled={alreadyExists}
-                        onClick={() => handleAddHeaderRow(preset.key, preset.val)}
-                        className={`text-[10px] font-mono px-2 py-0.5 rounded-md border transition-all ${
-                          alreadyExists
-                            ? 'opacity-30 border-slate-200 dark:border-slate-800 text-slate-400 cursor-not-allowed'
-                            : 'border-slate-200 dark:border-slate-800 hover:border-orange-500 text-slate-600 dark:text-slate-400 hover:text-orange-500'
-                        }`}
-                      >
-                        +{preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Rows List */}
-                <div className="space-y-1.5 pt-1 max-h-48 overflow-y-auto pr-1">
-                  {headerRows.length === 0 ? (
-                    <div className="py-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                      No hay headers configurados. Pulsa "+ Agregar Header".
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {graphqlHeaderRows.length === 0 ? (
+                    <div className="py-2.5 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                      Sin cabeceras GraphQL.
                     </div>
                   ) : (
-                    headerRows.map(row => (
+                    graphqlHeaderRows.map(row => (
                       <div
                         key={row.id}
-                        className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 p-2 rounded-xl border border-slate-200 dark:border-slate-800"
+                        className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800"
                       >
                         <input
                           type="text"
                           value={row.key}
-                          onChange={e => handleHeaderChange(row.id, 'key', e.target.value)}
-                          placeholder="Header (ej. Store)"
-                          className="w-1/3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
+                          onChange={e => handleGraphqlHeaderChange(row.id, 'key', e.target.value)}
+                          placeholder="Header (ej. Store, AuthToken)"
+                          className="w-1/3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
                         />
                         <span className="text-slate-400 text-xs">:</span>
                         <input
                           type="text"
                           value={row.value}
-                          onChange={e => handleHeaderChange(row.id, 'value', e.target.value)}
-                          placeholder="Valor (ej. max_com_gt)"
-                          className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2.5 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
+                          onChange={e => handleGraphqlHeaderChange(row.id, 'value', e.target.value)}
+                          placeholder="Valor"
+                          className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-orange-500"
                         />
                         <button
                           type="button"
-                          onClick={() => handleRemoveHeaderRow(row.id)}
+                          onClick={() => handleRemoveGraphqlHeader(row.id)}
+                          className="p-1 rounded text-slate-400 hover:text-rose-500 transition-colors"
+                          title="Eliminar header"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* REST Headers */}
+              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <label className="block text-xs font-semibold text-blue-600 dark:text-blue-400">
+                      Cabeceras REST
+                    </label>
+                    <span className="text-[11px] text-slate-400">
+                      Enviadas en peticiones REST API hacia este entorno
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => handleAddRestHeader()}
+                    className="flex items-center gap-1 px-2 py-1 rounded-lg border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-[11px] font-semibold transition-colors"
+                  >
+                    <Plus className="w-3 h-3 text-blue-500" />
+                    <span>+ Header REST</span>
+                  </button>
+                </div>
+
+                <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                  {restHeaderRows.length === 0 ? (
+                    <div className="py-2.5 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
+                      Sin cabeceras REST.
+                    </div>
+                  ) : (
+                    restHeaderRows.map(row => (
+                      <div
+                        key={row.id}
+                        className="flex items-center gap-2 bg-slate-50 dark:bg-slate-950 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800"
+                      >
+                        <input
+                          type="text"
+                          value={row.key}
+                          onChange={e => handleRestHeaderChange(row.id, 'key', e.target.value)}
+                          placeholder="Header (ej. Authorization)"
+                          className="w-1/3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                        <span className="text-slate-400 text-xs">:</span>
+                        <input
+                          type="text"
+                          value={row.value}
+                          onChange={e => handleRestHeaderChange(row.id, 'value', e.target.value)}
+                          placeholder="Valor (ej. Bearer {{customerToken}})"
+                          className="flex-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg px-2 py-1 text-xs font-mono text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRestHeader(row.id)}
                           className="p-1 rounded text-slate-400 hover:text-rose-500 transition-colors"
                           title="Eliminar header"
                         >

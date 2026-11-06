@@ -393,6 +393,7 @@ export class Database {
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS endpoint TEXT;
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS body TEXT;
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS environment_id VARCHAR(255);
+      ALTER TABLE variants ADD COLUMN IF NOT EXISTS disabled_headers JSONB DEFAULT '[]'::jsonb;
       
       -- Authorship & Soft delete for variants
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
@@ -488,6 +489,8 @@ export class Database {
 
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS variables JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS magento_rest_url TEXT;
+      ALTER TABLE environments ADD COLUMN IF NOT EXISTS graphql_headers JSONB;
+      ALTER TABLE environments ADD COLUMN IF NOT EXISTS rest_headers JSONB;
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS is_protected BOOLEAN DEFAULT FALSE;
       ALTER TABLE environments ADD COLUMN IF NOT EXISTS security_code TEXT DEFAULT '';
 
@@ -609,6 +612,7 @@ export class Database {
           contextOutputs: r.context_outputs,
           contextMapping: r.context_mapping,
           customHeaders: r.custom_headers || {},
+          disabledHeaders: r.disabled_headers || [],
           environmentOverrides: r.environment_overrides || {},
           environmentId: r.environment_id || null,
           customValidations: r.custom_validations || [],
@@ -666,6 +670,8 @@ export class Database {
             magentoRestUrl: r.magento_rest_url || '',
             storeCode: r.store_code,
             customHeaders: r.custom_headers,
+            graphqlHeaders: r.graphql_headers || undefined,
+            restHeaders: r.rest_headers || undefined,
             variables: sanitizeEnvironmentVariables(r.variables || {}),
             useMockSimulator: r.use_mock_simulator,
             isProtected: !!r.is_protected,
@@ -761,19 +767,19 @@ export class Database {
       `INSERT INTO variants (
         id, name, category, stage, description, query, default_variables,
         context_outputs, context_mapping, environment_overrides, custom_validations,
-        custom_headers, is_virtual_only, api_type, method, endpoint, body, environment_id,
+        custom_headers, disabled_headers, is_virtual_only, api_type, method, endpoint, body, environment_id,
         created_by, created_by_name, updated_by, updated_by_name,
         is_deleted, deleted_at, deleted_by, deleted_by_name,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
       ON CONFLICT (id) DO UPDATE SET
         name = $2, category = $3, stage = $4, description = $5, query = $6,
         default_variables = $7, context_outputs = $8, context_mapping = $9, environment_overrides = $10,
-        custom_validations = $11, custom_headers = $12, is_virtual_only = $13, api_type = $14, method = $15,
-        endpoint = $16, body = $17, environment_id = $18,
-        updated_by = $21, updated_by_name = $22,
-        is_deleted = $23, deleted_at = $24, deleted_by = $25, deleted_by_name = $26,
-        updated_at = $28`,
+        custom_validations = $11, custom_headers = $12, disabled_headers = $13, is_virtual_only = $14, api_type = $15, method = $16,
+        endpoint = $17, body = $18, environment_id = $19,
+        updated_by = $22, updated_by_name = $23,
+        is_deleted = $24, deleted_at = $25, deleted_by = $26, deleted_by_name = $27,
+        updated_at = $29`,
       [
         v.id,
         v.name,
@@ -787,6 +793,7 @@ export class Database {
         JSON.stringify(v.environmentOverrides || {}),
         JSON.stringify(v.customValidations || []),
         JSON.stringify(v.customHeaders || {}),
+        JSON.stringify(v.disabledHeaders || []),
         !!v.isVirtualOnly,
         v.apiType || 'GRAPHQL',
         v.method || 'POST',
@@ -1222,10 +1229,10 @@ export class Database {
 
     if (localPgPool && isLocalPgConnected) {
       localPgPool.query(
-        `INSERT INTO environments (id, name, magento_url, magento_rest_url, store_code, custom_headers, variables, use_mock_simulator, is_protected, security_code, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        `INSERT INTO environments (id, name, magento_url, magento_rest_url, store_code, custom_headers, graphql_headers, rest_headers, variables, use_mock_simulator, is_protected, security_code, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
          ON CONFLICT (id) DO UPDATE SET
-           name = $2, magento_url = $3, magento_rest_url = $4, store_code = $5, custom_headers = $6, variables = $7, use_mock_simulator = $8, is_protected = $9, security_code = $10, updated_at = $12`,
+           name = $2, magento_url = $3, magento_rest_url = $4, store_code = $5, custom_headers = $6, graphql_headers = $7, rest_headers = $8, variables = $9, use_mock_simulator = $10, is_protected = $11, security_code = $12, updated_at = $14`,
         [
           finalEnv.id,
           finalEnv.name,
@@ -1233,6 +1240,8 @@ export class Database {
           finalEnv.magentoRestUrl || '',
           finalEnv.storeCode || '',
           JSON.stringify(finalEnv.customHeaders || {}),
+          finalEnv.graphqlHeaders ? JSON.stringify(finalEnv.graphqlHeaders) : null,
+          finalEnv.restHeaders ? JSON.stringify(finalEnv.restHeaders) : null,
           JSON.stringify(finalEnv.variables || {}),
           !!finalEnv.useMockSimulator,
           !!finalEnv.isProtected,

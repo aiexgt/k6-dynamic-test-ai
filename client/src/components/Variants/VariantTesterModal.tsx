@@ -21,7 +21,8 @@ import {
   Trash2,
   Sparkles,
   Search,
-  Globe
+  Globe,
+  BarChart3
 } from 'lucide-react';
 import {
   Variant,
@@ -42,6 +43,7 @@ interface VariantTesterModalProps {
   variant: Variant;
   onClose: () => void;
   onVariantUpdated?: (updatedVariant: Variant) => void;
+  onNavigateToMetrics?: (executionId?: string) => void;
 }
 
 type RequestTab = 'query' | 'variables' | 'headers' | 'context' | 'validations';
@@ -50,7 +52,8 @@ type ResponseTab = 'response' | 'tests' | 'extracted' | 'requestPayload';
 export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
   variant,
   onClose,
-  onVariantUpdated
+  onVariantUpdated,
+  onNavigateToMetrics
 }) => {
   const { toast } = useFeedback();
 
@@ -170,6 +173,7 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
   // Execution State
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [executionResult, setExecutionResult] = useState<StepExecutionResult | null>(null);
+  const [lastHistoryId, setLastHistoryId] = useState<string | null>(null);
   const [hasExecuted, setHasExecuted] = useState<boolean>(false);
   const [responseSearch, setResponseSearch] = useState<string>('');
   const [copiedRes, setCopiedRes] = useState<boolean>(false);
@@ -234,6 +238,7 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
       apiType: variant.apiType,
       overrideVariables: parsedVariables,
       customHeaders: customHeadersObj,
+      disabledHeaders: variant.disabledHeaders,
       contextMapping: variant.contextMapping,
       customValidations: validations
     };
@@ -267,9 +272,12 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
   const doExecute = async (stepConfig: FlowStepConfig, simulatedContext: Partial<ExecutionContext>) => {
     setIsRunning(true);
     try {
-      // Execute without writing to global history benchmarks to keep playground clean
-      const res = await api.executeStep(stepConfig, simulatedContext, undefined, false);
+      // Execute and record in history for metrics inspection
+      const res = await api.executeStep(stepConfig, simulatedContext, undefined, true);
       setExecutionResult(res.stepResult);
+      if (res.historyId) {
+        setLastHistoryId(res.historyId);
+      }
       setHasExecuted(true);
 
       // Auto update context if step returned extracted variables (e.g. cartId or token)
@@ -1041,6 +1049,19 @@ export const VariantTesterModal: React.FC<VariantTesterModalProps> = ({
             {/* Quick Actions */}
             {hasExecuted && executionResult && (
               <div className="flex items-center gap-1.5">
+                {onNavigateToMetrics && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onNavigateToMetrics(lastHistoryId || undefined);
+                    }}
+                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold shadow-xs transition-colors"
+                    title="Ir directamente a ver las métricas de esta prueba en el panel de Analítica"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Ver en Métricas</span>
+                  </button>
+                )}
                 <button
                   onClick={handleCopyResponse}
                   className="flex items-center gap-1 px-2 py-0.5 rounded text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"

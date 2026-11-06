@@ -1,14 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { X, Copy, Check, Terminal, ArrowUpRight, ArrowDownLeft, ShieldCheck, CheckCircle2, XCircle } from 'lucide-react';
+import { X, Copy, Check, Terminal, ArrowUpRight, ArrowDownLeft, ShieldCheck, CheckCircle2, XCircle, BarChart3 } from 'lucide-react';
 import { StepExecutionResult } from '../../types';
 
 interface StepDetailModalProps {
   step: StepExecutionResult | null;
   onClose: () => void;
+  onNavigateToMetrics?: () => void;
 }
 
-export const StepDetailModal: React.FC<StepDetailModalProps> = ({ step, onClose }) => {
+export const StepDetailModal: React.FC<StepDetailModalProps> = ({ step, onClose, onNavigateToMetrics }) => {
   const [copiedTab, setCopiedTab] = useState<'request' | 'response' | null>(null);
   const [activeTab, setActiveTab] = useState<'response' | 'tests' | 'request' | 'headers'>(() => {
     return (step?.testResults || []).some(t => !t.passed) ? 'tests' : 'response';
@@ -73,12 +74,27 @@ export const StepDetailModal: React.FC<StepDetailModalProps> = ({ step, onClose 
               HTTP {step.status} • {step.durationMs}ms
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {onNavigateToMetrics && (
+              <button
+                onClick={() => {
+                  onClose();
+                  onNavigateToMetrics();
+                }}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-[11px] font-semibold transition-colors"
+                title="Ver métricas de ejecuciones"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Ver en Métricas</span>
+              </button>
+            )}
+            <button
+              onClick={onClose}
+              className="p-1 rounded text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         {/* Tab Selector */}

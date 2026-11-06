@@ -89,6 +89,8 @@ export interface Environment {
   magentoRestUrl?: string; // REST API Endpoint
   storeCode?: string;
   customHeaders: Record<string, any>;
+  graphqlHeaders?: Record<string, string>;
+  restHeaders?: Record<string, string>;
   variables?: Record<string, string>;
   useMockSimulator: boolean;
   isProtected?: boolean;
@@ -125,6 +127,7 @@ export interface Variant {
   contextOutputs: string[];
   contextMapping?: Record<string, string>;
   customHeaders?: Record<string, string>;
+  disabledHeaders?: string[];
   environmentOverrides?: Record<string, string>;
   environmentId?: string | null;
   customValidations?: CustomValidation[];
@@ -155,6 +158,7 @@ export interface FlowStepConfig {
   method?: HttpMethod;
   apiType?: ApiType;
   customHeaders?: Record<string, string>;
+  disabledHeaders?: string[];
   contextMapping?: Record<string, string>;
   customValidations?: CustomValidation[];
 }
@@ -246,6 +250,8 @@ export interface EnvironmentSettings {
   magentoRestUrl?: string;
   storeCode?: string;
   customHeaders: Record<string, string>;
+  graphqlHeaders?: Record<string, string>;
+  restHeaders?: Record<string, string>;
   variables?: Record<string, string>;
   useMockSimulator: boolean;
 }

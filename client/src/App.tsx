@@ -58,6 +58,17 @@ export function App() {
     }
   };
 
+  const navigateToMetrics = (executionId?: string) => {
+    let targetPath = '/analytics';
+    if (executionId) {
+      targetPath += `?execution=${encodeURIComponent(executionId)}`;
+    }
+    if (window.location.pathname + window.location.search !== targetPath) {
+      window.history.pushState(null, '', targetPath);
+    }
+    setActiveTabState('analytics');
+  };
+
   const handleFlowUrlUpdate = (flowId: string) => {
     let targetPath = '/playground';
     if (flowId) {
@@ -299,6 +310,7 @@ export function App() {
             onFlowChange={handleFlowUrlUpdate}
             environments={environments}
             activeEnvironmentId={settings?.activeEnvironmentId}
+            onNavigateToMetrics={navigateToMetrics}
           />
         )}
         {activeTab === 'flows' && (
@@ -306,6 +318,7 @@ export function App() {
             onLoadFlowInPlayground={handleLoadFlowInPlayground}
             environments={environments}
             activeEnvironmentId={settings?.activeEnvironmentId}
+            onNavigateToMetrics={navigateToMetrics}
           />
         )}
         {activeTab === 'variants' && (
@@ -315,6 +328,7 @@ export function App() {
               navigateToTab('categories');
             }}
             onReloadEnvironments={loadEnvironmentsData}
+            onNavigateToMetrics={navigateToMetrics}
           />
         )}
         {activeTab === 'categories' && (

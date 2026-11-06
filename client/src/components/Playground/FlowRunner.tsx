@@ -23,7 +23,8 @@ import {
   Globe,
   Braces,
   Clock,
-  X
+  X,
+  BarChart3
 } from 'lucide-react';
 import {
   Variant,
@@ -54,13 +55,15 @@ interface FlowRunnerProps {
   onFlowChange?: (flowId: string) => void;
   environments?: Environment[];
   activeEnvironmentId?: string;
+  onNavigateToMetrics?: (executionId?: string) => void;
 }
 
 export const FlowRunner: React.FC<FlowRunnerProps> = ({
   initialFlow,
   onFlowChange,
   environments: propEnvironments,
-  activeEnvironmentId: propActiveEnvId
+  activeEnvironmentId: propActiveEnvId,
+  onNavigateToMetrics
 }) => {
   const { toast } = useFeedback();
   const [internalEnvs, setInternalEnvs] = useState<Environment[]>([]);
@@ -115,6 +118,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     logs: []
   });
   const [executionResult, setExecutionResult] = useState<FlowExecutionResponse | null>(null);
+  const [lastSingleHistoryId, setLastSingleHistoryId] = useState<string | null>(null);
 
   // Modals & UI helpers
   const [selectedStepDetail, setSelectedStepDetail] = useState<StepExecutionResult | null>(null);
@@ -902,6 +906,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       );
       setStepResults(prev => ({ ...prev, [step.id]: response.stepResult }));
       setExecutionContext(response.updatedContext);
+      if (response.historyId) {
+        setLastSingleHistoryId(response.historyId);
+      }
 
       if (response.updatedContext.orderNumber) {
         setExecutionResult({
@@ -1215,21 +1222,33 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 h-2 w-40 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
-            {Object.values(stepResults)
-              .filter(s => s && !s.skipped && s.durationMs > 0)
-              .map((step, idx) => {
-                const pct = Math.max(8, Math.round((step.durationMs / (totalTimeCalculated || 1)) * 100));
-                const colors = ['bg-orange-500', 'bg-amber-500', 'bg-emerald-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-rose-500'];
-                return (
-                  <div
-                    key={idx}
-                    title={`${step.category}: ${step.durationMs}ms`}
-                    style={{ width: `${pct}%` }}
-                    className={`h-full ${colors[idx % colors.length]}`}
-                  />
-                );
-              })}
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 h-2 w-32 sm:w-40 bg-slate-100 dark:bg-slate-800 rounded-full overflow-hidden">
+              {Object.values(stepResults)
+                .filter(s => s && !s.skipped && s.durationMs > 0)
+                .map((step, idx) => {
+                  const pct = Math.max(8, Math.round((step.durationMs / (totalTimeCalculated || 1)) * 100));
+                  const colors = ['bg-orange-500', 'bg-amber-500', 'bg-emerald-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-rose-500'];
+                  return (
+                    <div
+                      key={idx}
+                      title={`${step.category}: ${step.durationMs}ms`}
+                      style={{ width: `${pct}%` }}
+                      className={`h-full ${colors[idx % colors.length]}`}
+                    />
+                  );
+                })}
+            </div>
+            {onNavigateToMetrics && (
+              <button
+                onClick={() => onNavigateToMetrics(executionResult?.id || lastSingleHistoryId || undefined)}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-xs shrink-0"
+                title="Ir directamente a ver las métricas en el panel de Analítica"
+              >
+                <BarChart3 className="w-3.5 h-3.5" />
+                <span>Ver en Métricas</span>
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -1900,7 +1919,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         />
       )}
 
-      <StepDetailModal step={selectedStepDetail} onClose={() => setSelectedStepDetail(null)} />
+      <StepDetailModal
+        step={selectedStepDetail}
+        onClose={() => setSelectedStepDetail(null)}
+        onNavigateToMetrics={onNavigateToMetrics ? () => onNavigateToMetrics(executionResult?.id || lastSingleHistoryId || undefined) : undefined}
+      />
       <SaveFlowModal
         isOpen={isSaveModalOpen}
         onClose={() => setIsSaveModalOpen(false)}
@@ -1927,6 +1950,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
           }
         }}
         onInspectStep={(stepResult) => setSelectedStepDetail(stepResult)}
+        onNavigateToMetrics={onNavigateToMetrics}
       />
 
       {activeFlow && (

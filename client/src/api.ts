@@ -390,6 +390,7 @@ export const api = {
     stepResult: StepExecutionResult;
     updatedContext: ExecutionContext;
     status: ExecutionStatus;
+    historyId?: string;
   }> {
     const res = await fetch(`${API_BASE}/flows/execute-step`, {
       method: 'POST',

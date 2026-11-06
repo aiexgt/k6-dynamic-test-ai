@@ -31,12 +31,14 @@ interface SavedFlowsListProps {
   onLoadFlowInPlayground: (flow: SavedFlow) => void;
   environments?: Environment[];
   activeEnvironmentId?: string;
+  onNavigateToMetrics?: (executionId?: string) => void;
 }
 
 export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
   onLoadFlowInPlayground,
   environments: propEnvironments,
-  activeEnvironmentId: propActiveEnvId
+  activeEnvironmentId: propActiveEnvId,
+  onNavigateToMetrics
 }) => {
   const { confirm, prompt, toast } = useFeedback();
   const [internalEnvs, setInternalEnvs] = useState<Environment[]>([]);
@@ -121,13 +123,23 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
           { key: 'Content-Type', value: 'application/json', type: 'text' }
         ];
 
-        const mergedHeaders = {
-          ...(activeEnv?.customHeaders || {}),
+        const envHeaders = isRest
+          ? (activeEnv?.restHeaders || activeEnv?.customHeaders || {})
+          : (activeEnv?.graphqlHeaders || activeEnv?.customHeaders || {});
+
+        const mergedHeaders: Record<string, string> = {
+          ...envHeaders,
           ...(v?.customHeaders || {}),
           ...(step.customHeaders || {})
         };
+
+        const canceled = new Set([
+          ...(v?.disabledHeaders || []),
+          ...(step.disabledHeaders || [])
+        ].map(h => h.trim().toLowerCase()));
+
         for (const [k, val] of Object.entries(mergedHeaders)) {
-          if (k.toLowerCase() !== 'content-type') {
+          if (k.toLowerCase() !== 'content-type' && !canceled.has(k.toLowerCase())) {
             headers.push({ key: k, value: String(val), type: 'text' });
           }
         }
@@ -871,6 +883,7 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
             }
           }}
           onInspectStep={(stepResult) => setSelectedStepDetail(stepResult)}
+          onNavigateToMetrics={onNavigateToMetrics}
         />
       )}
 
@@ -879,6 +892,7 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
         <StepDetailModal
           step={selectedStepDetail}
           onClose={() => setSelectedStepDetail(null)}
+          onNavigateToMetrics={onNavigateToMetrics ? () => onNavigateToMetrics() : undefined}
         />
       )}
 

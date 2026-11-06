@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical, Sliders, Braces } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical, Sliders, Braces, Ban, RotateCcw, X } from 'lucide-react';
 import { Variant, CustomValidation, ValidationType, ApiType, HttpMethod, Environment } from '../../types';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { CodeEditor } from '../common/CodeEditor';
@@ -78,6 +78,10 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
   // Custom Headers for this variant (overrides environment headers and supports {{vars}})
   const [headerRows, setHeaderRows] = useState<KeyValueRow[]>([]);
 
+  // Cancelled/Disabled Headers for this variant (headers that must NOT be sent)
+  const [disabledHeaders, setDisabledHeaders] = useState<string[]>(() => initialVariant?.disabledHeaders || []);
+  const [newCancelHeaderInput, setNewCancelHeaderInput] = useState('');
+
   // Custom Validations
   const [validations, setValidations] = useState<CustomValidation[]>([]);
   const [isTesterOpen, setIsTesterOpen] = useState(false);
@@ -97,6 +101,59 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       }
     }).catch(console.error);
   }, [initialVariant]);
+
+  const targetEnv = useMemo(() => {
+    if (useCustomEnvironment && selectedEnvironmentId) {
+      return environments.find(e => e.id === selectedEnvironmentId) || environments[0];
+    }
+    return environments[0];
+  }, [environments, useCustomEnvironment, selectedEnvironmentId]);
+
+  const inheritedEnvHeaders = useMemo(() => {
+    if (!targetEnv) return {};
+    const isRest = apiType === 'REST';
+    const envHeaders = isRest
+      ? (targetEnv.restHeaders || targetEnv.customHeaders || {})
+      : (targetEnv.graphqlHeaders || targetEnv.customHeaders || {});
+
+    const result: Record<string, string> = {};
+    for (const [k, v] of Object.entries(envHeaders)) {
+      if (typeof v === 'object' && v !== null && ('value' in v || 'graphql' in v || 'rest' in v)) {
+        const applies = isRest ? (v as any).rest !== false : (v as any).graphql !== false;
+        if (applies) {
+          result[k] = String((v as any).value ?? '');
+        }
+      } else {
+        result[k] = String(v);
+      }
+    }
+    return result;
+  }, [targetEnv, apiType]);
+
+  const handleToggleCancelHeader = (keyToToggle: string) => {
+    const clean = keyToToggle.trim();
+    if (!clean) return;
+    setDisabledHeaders(prev => {
+      const lower = clean.toLowerCase();
+      const exists = prev.some(h => h.toLowerCase() === lower);
+      if (exists) {
+        return prev.filter(h => h.toLowerCase() !== lower);
+      } else {
+        return [...prev, clean];
+      }
+    });
+  };
+
+  const handleAddCustomCancelHeader = () => {
+    const clean = newCancelHeaderInput.trim();
+    if (!clean) return;
+    setDisabledHeaders(prev => {
+      const lower = clean.toLowerCase();
+      if (prev.some(h => h.toLowerCase() === lower)) return prev;
+      return [...prev, clean];
+    });
+    setNewCancelHeaderInput('');
+  };
 
   const currentVariantDraft: Variant = useMemo(() => {
     let parsedVars = {};
@@ -132,13 +189,14 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       contextOutputs: contextOutputsStr.split(',').map(s => s.trim()).filter(Boolean),
       contextMapping: parsedMapping,
       customHeaders: cHeaders,
+      disabledHeaders,
       environmentId: useCustomEnvironment ? (selectedEnvironmentId || null) : null,
       customValidations: validations,
       isVirtualOnly,
       createdAt: initialVariant?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-  }, [initialVariant, name, category, isCreatingNewCat, newCategoryName, description, apiType, method, endpoint, body, query, defaultVariablesStr, contextOutputsStr, headerRows, mappingRows, validations, isVirtualOnly, useCustomEnvironment, selectedEnvironmentId]);
+  }, [initialVariant, name, category, isCreatingNewCat, newCategoryName, description, apiType, method, endpoint, body, query, defaultVariablesStr, contextOutputsStr, headerRows, disabledHeaders, mappingRows, validations, isVirtualOnly, useCustomEnvironment, selectedEnvironmentId]);
 
   const handleTesterUpdated = (updated: Variant) => {
     setQuery(updated.query || '');
@@ -155,6 +213,9 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
         value: String(v)
       }));
       setHeaderRows(hRows);
+    }
+    if (updated.disabledHeaders) {
+      setDisabledHeaders(updated.disabledHeaders);
     }
   };
 
@@ -195,6 +256,9 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
         value: String(v)
       }));
       setHeaderRows(hRows);
+
+      // Cancelled / Disabled Headers
+      setDisabledHeaders(initialVariant.disabledHeaders || []);
     } else {
       setName('');
       setCategory(defaultCategory || categories[0] || 'Crear Carrito');
@@ -202,6 +266,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       setDescription('');
       setQuery('');
       setDefaultVariablesStr('{}');
+      setDisabledHeaders([]);
       setContextOutputsStr('');
       setIsVirtualOnly(false);
       setUseCustomEnvironment(false);
@@ -355,6 +420,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       contextOutputs,
       contextMapping: parsedMapping,
       customHeaders: parsedHeaders,
+      disabledHeaders: disabledHeaders.filter(Boolean),
       environmentId: useCustomEnvironment ? (selectedEnvironmentId || null) : null,
       customValidations: validations,
       isVirtualOnly
@@ -857,13 +923,18 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
           )}
         </div>
 
-        {/* 4. Headers de la Variante (Sobreescribir o usar variables) */}
-        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-3">
+        {/* 4. Headers de la Variante (Sobreescribir o Cancelar headers del Entorno) */}
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 shadow-sm space-y-4">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-              <Terminal className="w-3.5 h-3.5 text-orange-500" />
-              <span>4. Headers de la Variante (Sobreescribir / Variables)</span>
-            </h2>
+            <div>
+              <h2 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <Terminal className="w-3.5 h-3.5 text-orange-500" />
+                <span>4. Cabeceras HTTP (Headers)</span>
+              </h2>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
+                Sobreescribe cabeceras o cancela las que no desees enviar en esta variante
+              </p>
+            </div>
 
             <button
               type="button"
@@ -871,58 +942,192 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-sm"
             >
               <Plus className="w-3 h-3" />
-              <span>Añadir Header</span>
+              <span>Añadir Header Propio</span>
             </button>
           </div>
 
-          {headerRows.length === 0 ? (
-            <div className="py-3 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-              Usa los headers del environment por defecto. Pulsa "+ Añadir Header" para sobreescribir alguno o usar &#123;&#123;variables&#125;&#125;.
+          {/* Sub-sección: Headers del Entorno Activo con acción Cancelar */}
+          <div className="bg-slate-50 dark:bg-slate-950/60 border border-slate-200/80 dark:border-slate-800/80 rounded-xl p-3.5 space-y-2.5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+              <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1.5">
+                <span>Cabeceras Heredadas del Entorno ({targetEnv?.name || 'Activo'})</span>
+                <span className="text-[10px] font-normal text-slate-400 font-mono">
+                  [{apiType}]
+                </span>
+              </span>
+              <span className="text-[10px] text-slate-400">
+                Presiona "Cancelar" para evitar que se envíe una cabecera en esta variante
+              </span>
             </div>
-          ) : (
-            <div className="space-y-2">
-              <div className="grid grid-cols-12 gap-2 text-[11px] font-semibold text-slate-400 px-1">
-                <span className="col-span-5">Header Key (ej: Authorization, Store)</span>
-                <span className="col-span-6">Header Value (soporta &#123;&#123;token&#125;&#125;)</span>
-                <span className="col-span-1 text-right">Quitar</span>
-              </div>
 
-              {headerRows.map(row => (
-                <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
-                  <div className="col-span-5">
-                    <input
-                      type="text"
-                      value={row.key}
-                      onChange={e => handleHeaderChange(row.id, 'key', e.target.value)}
-                      placeholder="ej: Authorization"
-                      className="w-full px-3 py-1.5 text-xs font-mono font-bold rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                  </div>
-
-                  <div className="col-span-6">
-                    <input
-                      type="text"
-                      value={row.value}
-                      onChange={e => handleHeaderChange(row.id, 'value', e.target.value)}
-                      placeholder="ej: Bearer {{customerToken}}"
-                      className="w-full px-3 py-1.5 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
-                    />
-                  </div>
-
-                  <div className="col-span-1 text-right">
-                    <button
-                      type="button"
-                      onClick={() => handleRemoveHeaderRow(row.id)}
-                      className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20"
-                      title="Eliminar header"
+            {Object.keys(inheritedEnvHeaders).length === 0 ? (
+              <p className="text-xs text-slate-400 italic">No hay cabeceras configuradas en el entorno activo para {apiType}.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {Object.entries(inheritedEnvHeaders).map(([hKey, hVal]) => {
+                  const isCanceled = disabledHeaders.some(d => d.toLowerCase() === hKey.toLowerCase());
+                  return (
+                    <div
+                      key={hKey}
+                      className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 transition-all ${
+                        isCanceled
+                          ? 'bg-rose-50/70 dark:bg-rose-950/20 border-rose-200 dark:border-rose-900/40 text-rose-700 dark:text-rose-400'
+                          : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-800 dark:text-slate-200'
+                      }`}
                     >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              ))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`text-xs font-mono font-bold truncate ${isCanceled ? 'line-through text-rose-500' : ''}`}>
+                            {hKey}
+                          </span>
+                          {isCanceled && (
+                            <span className="text-[9px] font-bold uppercase tracking-wider px-1 py-0.2 bg-rose-500 text-white rounded">
+                              Cancelado
+                            </span>
+                          )}
+                        </div>
+                        <span className={`text-[10px] font-mono block truncate ${isCanceled ? 'line-through opacity-60' : 'text-slate-400'}`}>
+                          {hVal || '—'}
+                        </span>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCancelHeader(hKey)}
+                        className={`px-2 py-1 rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 shrink-0 ${
+                          isCanceled
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs'
+                            : 'bg-slate-100 hover:bg-rose-50 hover:text-rose-600 dark:bg-slate-800 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 text-slate-600 dark:text-slate-300'
+                        }`}
+                        title={isCanceled ? 'Restaurar envío de esta cabecera' : 'Cancelar envío de esta cabecera en esta variante'}
+                      >
+                        {isCanceled ? (
+                          <>
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Restaurar</span>
+                          </>
+                        ) : (
+                          <>
+                            <Ban className="w-3 h-3 text-rose-500" />
+                            <span>Cancelar</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Quick input to cancel any other header name not in inherited list */}
+            <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 font-medium shrink-0">
+                Cancelar otro header:
+              </span>
+              <input
+                type="text"
+                value={newCancelHeaderInput}
+                onChange={e => setNewCancelHeaderInput(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleAddCustomCancelHeader();
+                  }
+                }}
+                placeholder="Nombre del header a cancelar (ej: Authorization, Cookie, Store)"
+                className="flex-1 px-3 py-1 text-xs font-mono rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-1 focus:ring-rose-500"
+              />
+              <button
+                type="button"
+                onClick={handleAddCustomCancelHeader}
+                disabled={!newCancelHeaderInput.trim()}
+                className="px-2.5 py-1 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 text-white transition-colors shrink-0"
+              >
+                + Cancelar Header
+              </button>
             </div>
-          )}
+
+            {/* If there are custom canceled headers that aren't in inherited list */}
+            {disabledHeaders.filter(d => !Object.keys(inheritedEnvHeaders).some(k => k.toLowerCase() === d.toLowerCase())).length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] text-rose-500 font-bold uppercase tracking-wider">Otros cancelados:</span>
+                {disabledHeaders
+                  .filter(d => !Object.keys(inheritedEnvHeaders).some(k => k.toLowerCase() === d.toLowerCase()))
+                  .map(d => (
+                    <span
+                      key={d}
+                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-900/60 text-rose-600 dark:text-rose-400 text-xs font-mono"
+                    >
+                      <span className="line-through">{d}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleCancelHeader(d)}
+                        className="hover:text-rose-800 dark:hover:text-rose-200 p-0.5"
+                        title="Restaurar este header"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </span>
+                  ))}
+              </div>
+            )}
+          </div>
+
+          {/* Sub-sección: Headers Propios / Sobrescrituras */}
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold text-slate-600 dark:text-slate-400 block">
+              Cabeceras Propias de la Variante
+            </span>
+
+            {headerRows.length === 0 ? (
+              <div className="py-3 text-center rounded-xl border border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400">
+                Sin cabeceras propias adicionales. Usa los del entorno o pulsa "+ Añadir Header Propio".
+              </div>
+            ) : (
+              <div className="space-y-2">
+                <div className="grid grid-cols-12 gap-2 text-[11px] font-semibold text-slate-400 px-1">
+                  <span className="col-span-5">Header Key (ej: Authorization, Store)</span>
+                  <span className="col-span-6">Header Value (soporta &#123;&#123;token&#125;&#125;)</span>
+                  <span className="col-span-1 text-right">Quitar</span>
+                </div>
+
+                {headerRows.map(row => (
+                  <div key={row.id} className="grid grid-cols-12 gap-2 items-center">
+                    <div className="col-span-5">
+                      <input
+                        type="text"
+                        value={row.key}
+                        onChange={e => handleHeaderChange(row.id, 'key', e.target.value)}
+                        placeholder="ej: Authorization"
+                        className="w-full px-3 py-1.5 text-xs font-mono font-bold rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+
+                    <div className="col-span-6">
+                      <input
+                        type="text"
+                        value={row.value}
+                        onChange={e => handleHeaderChange(row.id, 'value', e.target.value)}
+                        placeholder="ej: Bearer {{customerToken}}"
+                        className="w-full px-3 py-1.5 text-xs font-mono rounded-xl bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500"
+                      />
+                    </div>
+
+                    <div className="col-span-1 text-right">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveHeaderRow(row.id)}
+                        className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/20"
+                        title="Eliminar header"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* 5. Validaciones Personalizadas */}

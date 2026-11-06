@@ -35,6 +35,7 @@ import { useFeedback } from '../../context/FeedbackContext';
 interface VariantCatalogProps {
   onNavigateToCategories?: () => void;
   onReloadEnvironments?: () => void;
+  onNavigateToMetrics?: (executionId?: string) => void;
 }
 
 // Helper to extract GraphQL operation type and field name
@@ -59,7 +60,8 @@ function extractOperationDetails(query: string): { type: string; operation: stri
 
 export const VariantCatalog: React.FC<VariantCatalogProps> = ({
   onNavigateToCategories: _onNavigateToCategories,
-  onReloadEnvironments
+  onReloadEnvironments,
+  onNavigateToMetrics
 }) => {
   const { confirm, toast } = useFeedback();
   const [variants, setVariants] = useState<Variant[]>([]);
@@ -370,11 +372,23 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
       }
     }
 
+    const envHeaders = isRest
+      ? (targetEnv?.restHeaders || targetEnv?.customHeaders || {})
+      : (targetEnv?.graphqlHeaders || targetEnv?.customHeaders || {});
+
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
-      ...(targetEnv?.customHeaders || {}),
+      ...envHeaders,
       ...(variant.customHeaders || {})
     };
+
+    // Filter out canceled headers
+    const canceled = new Set((variant.disabledHeaders || []).map(h => h.trim().toLowerCase()));
+    for (const k of Object.keys(headers)) {
+      if (canceled.has(k.trim().toLowerCase())) {
+        delete headers[k];
+      }
+    }
 
     let curl = `curl --location --request ${method} '${fullUrl}'`;
     for (const [k, v] of Object.entries(headers)) {
@@ -795,6 +809,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
             }).catch(console.error);
           }}
           onVariantUpdated={handleVariantUpdated}
+          onNavigateToMetrics={onNavigateToMetrics}
         />
       )}
 

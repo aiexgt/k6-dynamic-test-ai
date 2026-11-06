@@ -8,7 +8,8 @@ import {
   Copy,
   ExternalLink,
   Square,
-  Clock
+  Clock,
+  BarChart3
 } from 'lucide-react';
 import { FlowStepConfig, Variant, StepExecutionResult, ExecutionContext, FlowExecutionResponse, CsvDataset } from '../../types';
 import { api } from '../../api';
@@ -28,6 +29,7 @@ interface FlowExecutionModalProps {
     finalContext: ExecutionContext
   ) => void;
   onInspectStep?: (stepResult: StepExecutionResult) => void;
+  onNavigateToMetrics?: (executionId?: string) => void;
 }
 
 // Compute natural zigzag climbing waypoints on the snowy mountain flank (standard mode)
@@ -85,7 +87,8 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
   defaultDelayMs = 0,
   initialContext,
   onExecutionComplete,
-  onInspectStep
+  onInspectStep,
+  onNavigateToMetrics
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
@@ -107,6 +110,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
       errorMessage?: string;
     }>
   >([]);
+  const [lastRecordedHistoryId, setLastRecordedHistoryId] = useState<string | null>(null);
   const [stepStatusMap, setStepStatusMap] = useState<Record<string, 'pending' | 'running' | 'success' | 'failed'>>({});
   const [stepResultsMap, setStepResultsMap] = useState<Record<string, StepExecutionResult>>({});
   const [currentContext, setCurrentContext] = useState<ExecutionContext>(
@@ -242,6 +246,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
     setFailedStepResult(null);
     setCurrentStepIndex(0);
     setDatasetResults([]);
+    setLastRecordedHistoryId(null);
 
     const rowsToRun = dataset && dataset.rows && dataset.rows.length > 0 ? dataset.rows : [{}];
     const consolidatedDatasetMetrics: typeof datasetResults = [];
@@ -459,8 +464,9 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
     const lastFailed = consolidatedDatasetMetrics.find(m => m.status === 'FAILED');
     const datasetInfo = rowsToRun.length > 1 ? ` [Dataset: ${rowsToRun.length} iteraciones]` : '';
 
+    let recordedHistoryId: string | undefined;
     try {
-      await api.recordFlowHistory({
+      const rec = await api.recordFlowHistory({
         flowName: (flowName || 'Flujo de Checkout') + datasetInfo,
         status: consolidatedStatus,
         orderNumber: finalRunningCtx.orderNumber,
@@ -469,13 +475,17 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
         errorMessage: lastFailed?.errorMessage || undefined,
         steps: allExecutedStepsAcrossRows.length > 0 ? allExecutedStepsAcrossRows : (overallFinalResp?.steps || [])
       });
+      if (rec?.id) {
+        recordedHistoryId = rec.id;
+        setLastRecordedHistoryId(rec.id);
+      }
     } catch (recErr) {
       console.error('Error saving single consolidated flow history:', recErr);
     }
 
     if (overallFinalResp) {
       onExecutionComplete(
-        { ...overallFinalResp, status: consolidatedStatus, totalTimeMs: totalDuration },
+        { ...overallFinalResp, id: recordedHistoryId || overallFinalResp.id, status: consolidatedStatus, totalTimeMs: totalDuration },
         finalCollector,
         finalRunningCtx
       );
@@ -1048,6 +1058,19 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                     <span>{copiedOrder ? 'Copiado' : 'Copiar'}</span>
                   </button>
                 )}
+                {onNavigateToMetrics && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onNavigateToMetrics(lastRecordedHistoryId || undefined);
+                    }}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md"
+                    title="Ir directamente a ver las métricas de esta ejecución en el panel de Analítica"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Ver en Métricas</span>
+                  </button>
+                )}
                 <button
                   onClick={onClose}
                   className="flex-1 sm:flex-initial px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white dark:bg-white dark:hover:bg-slate-100 dark:text-slate-950 text-xs font-bold transition-all shadow-md"
@@ -1111,6 +1134,19 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
                   >
                     <ExternalLink className="w-3.5 h-3.5 text-orange-500" />
                     <span>Inspeccionar</span>
+                  </button>
+                )}
+                {onNavigateToMetrics && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onNavigateToMetrics(lastRecordedHistoryId || undefined);
+                    }}
+                    className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md"
+                    title="Ir directamente a ver las métricas de esta ejecución en el panel de Analítica"
+                  >
+                    <BarChart3 className="w-3.5 h-3.5" />
+                    <span>Ver en Métricas</span>
                   </button>
                 )}
                 <button

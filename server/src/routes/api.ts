@@ -108,6 +108,7 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     contextOutputs,
     contextMapping,
     customHeaders,
+    disabledHeaders,
     environmentOverrides,
     customValidations,
     isVirtualOnly
@@ -144,6 +145,7 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     contextOutputs: Array.isArray(contextOutputs) ? contextOutputs : [],
     contextMapping: contextMapping || {},
     customHeaders: customHeaders || {},
+    disabledHeaders: Array.isArray(disabledHeaders) ? disabledHeaders : [],
     environmentOverrides: environmentOverrides || {},
     customValidations: Array.isArray(customValidations) ? customValidations : [],
     isVirtualOnly: !!isVirtualOnly,
@@ -175,6 +177,7 @@ apiRouter.put('/variants/:id', (req: Request, res: Response) => {
     body: req.body.body !== undefined ? req.body.body : existing.body,
     environmentId: req.body.environmentId !== undefined ? req.body.environmentId : existing.environmentId,
     customHeaders: req.body.customHeaders !== undefined ? req.body.customHeaders : existing.customHeaders,
+    disabledHeaders: Array.isArray(req.body.disabledHeaders) ? req.body.disabledHeaders : existing.disabledHeaders || [],
     environmentOverrides: req.body.environmentOverrides !== undefined ? req.body.environmentOverrides : existing.environmentOverrides,
     customValidations: Array.isArray(req.body.customValidations) ? req.body.customValidations : existing.customValidations,
     id: existing.id,
@@ -466,7 +469,7 @@ apiRouter.get('/environments', (_req: Request, res: Response) => {
 });
 
 apiRouter.post('/environments', (req: Request, res: Response) => {
-  const { name, magentoUrl, magentoRestUrl, storeCode, customHeaders, variables, useMockSimulator } = req.body;
+  const { name, magentoUrl, magentoRestUrl, storeCode, customHeaders, graphqlHeaders, restHeaders, variables, useMockSimulator } = req.body;
   if (!name || !magentoUrl) {
     return res.status(400).json({ error: 'name and magentoUrl are required' });
   }
@@ -477,6 +480,8 @@ apiRouter.post('/environments', (req: Request, res: Response) => {
     magentoRestUrl: magentoRestUrl || '',
     storeCode: storeCode || '',
     customHeaders: customHeaders || { 'Content-Type': 'application/json' },
+    graphqlHeaders: graphqlHeaders || undefined,
+    restHeaders: restHeaders || undefined,
     variables: variables || {},
     useMockSimulator: !!useMockSimulator,
     createdAt: new Date().toISOString(),
@@ -495,6 +500,8 @@ apiRouter.put('/environments/:id', (req: Request, res: Response) => {
     ...existing,
     ...req.body,
     id: existing.id,
+    graphqlHeaders: req.body.graphqlHeaders !== undefined ? req.body.graphqlHeaders : existing.graphqlHeaders,
+    restHeaders: req.body.restHeaders !== undefined ? req.body.restHeaders : existing.restHeaders,
     variables: req.body.variables !== undefined ? req.body.variables : existing.variables,
     updatedAt: new Date().toISOString()
   };
@@ -509,6 +516,8 @@ apiRouter.put('/environments/:id', (req: Request, res: Response) => {
       magentoRestUrl: updated.magentoRestUrl || '',
       storeCode: updated.storeCode || '',
       customHeaders: updated.customHeaders,
+      graphqlHeaders: updated.graphqlHeaders,
+      restHeaders: updated.restHeaders,
       variables: updated.variables || {},
       useMockSimulator: updated.useMockSimulator
     });

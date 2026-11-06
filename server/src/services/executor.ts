@@ -460,9 +460,31 @@ export class FlowExecutionService {
       'Content-Type': 'application/json'
     };
 
-    if (effectiveSettings.customHeaders && typeof effectiveSettings.customHeaders === 'object') {
+    // Set de cabeceras canceladas explícitamente en la variante o en el paso
+    const canceledHeaders = new Set<string>();
+    (variant.disabledHeaders || []).forEach(h => {
+      if (h && typeof h === 'string') canceledHeaders.add(h.trim().toLowerCase());
+    });
+    (step.disabledHeaders || []).forEach(h => {
+      if (h && typeof h === 'string') canceledHeaders.add(h.trim().toLowerCase());
+    });
+
+    // 1. Resolver cabeceras del entorno separadas para REST vs GraphQL
+    const envHeaders = isRest
+      ? effectiveSettings.restHeaders
+      : effectiveSettings.graphqlHeaders;
+
+    if (envHeaders && typeof envHeaders === 'object' && Object.keys(envHeaders).length > 0) {
+      for (const [key, rawVal] of Object.entries(envHeaders)) {
+        if (rawVal !== undefined && rawVal !== null && !canceledHeaders.has(key.trim().toLowerCase())) {
+          headers[key] = interpolateString(String(rawVal), allContextVars);
+        }
+      }
+    } else if (effectiveSettings.customHeaders && typeof effectiveSettings.customHeaders === 'object') {
       for (const [key, rawVal] of Object.entries(effectiveSettings.customHeaders)) {
         if (rawVal !== undefined && rawVal !== null) {
+          if (canceledHeaders.has(key.trim().toLowerCase())) continue;
+
           let headerVal = '';
           let appliesToGql = true;
           let appliesToRest = true;
@@ -488,8 +510,13 @@ export class FlowExecutionService {
       }
     }
 
-    // Inyectar Authorization Bearer token si está disponible y no fue definido en customHeaders
-    if (resolvedToken && !headers['Authorization'] && !headers['authorization']) {
+    // Inyectar Authorization Bearer token si está disponible, no fue cancelado y no fue definido
+    if (
+      !canceledHeaders.has('authorization') &&
+      resolvedToken &&
+      !headers['Authorization'] &&
+      !headers['authorization']
+    ) {
       headers['Authorization'] = `Bearer ${resolvedToken}`;
     }
 
@@ -499,8 +526,15 @@ export class FlowExecutionService {
       ...(step.customHeaders || {})
     };
     for (const [key, value] of Object.entries(mergedCustomHeaders)) {
-      if (value !== undefined && value !== null) {
+      if (value !== undefined && value !== null && !canceledHeaders.has(key.trim().toLowerCase())) {
         headers[key] = interpolateString(String(value), allContextVars);
+      }
+    }
+
+    // Purga estricta: asegurar que ningún header cancelado se envíe bajo ninguna circunstancia
+    for (const key of Object.keys(headers)) {
+      if (canceledHeaders.has(key.trim().toLowerCase())) {
+        delete headers[key];
       }
     }
 
@@ -798,6 +832,7 @@ export class FlowExecutionService {
     stepResult: StepExecutionResult;
     updatedContext: ExecutionContext;
     status: ExecutionStatus;
+    historyId?: string;
   }> {
     const storedSettings = Database.getSettings();
     const settings: EnvironmentSettings = { ...storedSettings, ...customSettings };
@@ -816,14 +851,17 @@ export class FlowExecutionService {
     const testsFailed = stepResult.testResults?.filter(t => !t.passed).length || 0;
     const singleStatus: ExecutionStatus = hasError ? 'FAILED' : testsFailed > 0 ? 'TESTS_FAILED' : 'SUCCESS';
 
+    let historyId: string | undefined;
+
     if (recordHistory) {
       // Registrar en Historial como petición individual (Requirement 6)
       const activeEnv = settings.activeEnvironmentId
         ? Database.getEnvironmentById(settings.activeEnvironmentId)
         : null;
 
+      historyId = 'run-single-' + Date.now().toString(36);
       const historyRecord: FlowExecutionResponse = {
-        id: 'run-single-' + Date.now().toString(36),
+        id: historyId,
         executionType: 'SINGLE',
         targetName: stepResult.variantName,
         environmentName: activeEnv?.name || 'Por defecto',
@@ -844,7 +882,8 @@ export class FlowExecutionService {
     return {
       stepResult,
       updatedContext: context,
-      status: singleStatus
+      status: singleStatus,
+      historyId
     };
   }
 
