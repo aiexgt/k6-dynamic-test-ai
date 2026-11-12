@@ -444,7 +444,7 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
                     Busca y selecciona flujos arriba para ordenarlos en este set.
                   </div>
                 ) : (
-                  <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                  <div className="space-y-1.5">
                     {formFlowIds.map((fid, idx) => {
                       const f = savedFlows.find(flow => flow.id === fid);
                       return (

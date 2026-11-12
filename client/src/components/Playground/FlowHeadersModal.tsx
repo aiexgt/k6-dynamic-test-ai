@@ -352,12 +352,12 @@ export const FlowHeadersModal: React.FC<FlowHeadersModalProps> = ({
               )}
 
               {/* Suggestions from Environment */}
-              <div className="space-y-2 pt-2 border-t border-slate-200 dark:border-slate-800">
-                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
-                  <Info className="w-3.5 h-3.5" />
+              <div className="space-y-3 pt-3 border-t border-slate-200 dark:border-slate-800">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Info className="w-3.5 h-3.5 text-slate-400" />
                   <span>Cabeceras del Entorno / Sugerencias para cancelar:</span>
                 </span>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-48 overflow-y-auto pr-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                   {envHeadersList.map(item => {
                     const isCancelled = disabledHeaders.some(h => h.toLowerCase() === item.key.toLowerCase());
                     return (
@@ -365,22 +365,22 @@ export const FlowHeadersModal: React.FC<FlowHeadersModalProps> = ({
                         key={item.key}
                         type="button"
                         onClick={() => handleToggleCancelHeader(item.key)}
-                        className={`flex items-center justify-between p-2 rounded-xl border text-xs text-left transition-all ${
+                        className={`flex items-center justify-between p-3 rounded-2xl border text-xs text-left transition-all ${
                           isCancelled
-                            ? 'bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-300 font-bold'
-                            : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300'
+                            ? 'bg-rose-500/10 border-rose-500/40 text-rose-700 dark:text-rose-300 font-bold shadow-xs'
+                            : 'bg-white dark:bg-slate-950 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-slate-300 dark:hover:border-slate-700 shadow-2xs'
                         }`}
                       >
                         <div className="truncate mr-2">
-                          <span className="font-mono block truncate">{item.key}</span>
-                          <span className="text-[10px] text-slate-400 block truncate">{item.value}</span>
+                          <span className="font-mono font-semibold block truncate text-slate-900 dark:text-slate-100">{item.key}</span>
+                          <span className="text-[11px] text-slate-400 block truncate font-mono mt-0.5">{item.value}</span>
                         </div>
                         {isCancelled ? (
-                          <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-600 text-white shrink-0">
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold bg-rose-600 text-white shrink-0 shadow-xs">
                             Cancelado
                           </span>
                         ) : (
-                          <span className="text-[10px] text-slate-400 hover:text-rose-500 shrink-0 font-semibold">
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] text-slate-500 dark:text-slate-400 hover:text-rose-600 border border-slate-200 dark:border-slate-800 shrink-0 font-semibold transition-colors">
                             Cancelar
                           </span>
                         )}
