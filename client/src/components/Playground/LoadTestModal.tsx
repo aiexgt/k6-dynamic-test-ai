@@ -408,8 +408,8 @@ export default function () {
   if (!isOpen) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-[95vw] max-w-6xl h-[90vh] max-h-[90vh] flex flex-col shadow-2xl overflow-hidden transition-colors">
+    <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh] flex flex-col shadow-2xl overflow-hidden transition-colors">
         {/* Header */}
         <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50/70 dark:bg-slate-950/40">
           <div className="flex items-center gap-2.5">

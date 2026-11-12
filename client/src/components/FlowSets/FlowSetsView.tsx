@@ -345,8 +345,8 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
 
       {/* Create / Edit Modal */}
       {isEditorOpen && createPortal(
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-[94vw] max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-[95vw] h-[95vh] max-w-[95vw] max-h-[95vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <ListOrdered className="w-4 h-4 text-orange-600" />
@@ -360,7 +360,7 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
               </button>
             </div>
 
-            <form onSubmit={handleSaveSet} className="flex-1 overflow-y-auto p-6 space-y-5">
+            <form onSubmit={handleSaveSet} className="flex-1 overflow-y-auto overflow-x-hidden p-6 space-y-5">
               <div className="space-y-1.5">
                 <label className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Nombre del Set:
@@ -419,13 +419,13 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
 
               {/* Sequential Flow Selection */}
               <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between gap-4">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Flujos del Set ({formFlowIds.length})
                   </label>
 
                   {/* Flow adder searchable select */}
-                  <div className="w-72">
+                  <div className="w-full sm:w-80">
                     <SearchableSelect
                       options={flowSelectOptions}
                       value=""
@@ -433,6 +433,8 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
                         if (flowId) handleAddFlowToForm(flowId);
                       }}
                       placeholder="+ Buscar y añadir flujo..."
+                      dropdownWidth="match-trigger"
+                      align="right"
                     />
                   </div>
                 </div>

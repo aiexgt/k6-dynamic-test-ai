@@ -15,6 +15,8 @@ interface SearchableSelectProps {
   placeholder?: string;
   disabled?: boolean;
   className?: string;
+  align?: 'left' | 'right' | 'auto';
+  dropdownWidth?: 'match-trigger' | 'auto';
 }
 
 export const SearchableSelect: React.FC<SearchableSelectProps> = ({
@@ -23,7 +25,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
   onChange,
   placeholder = 'Seleccionar...',
   disabled = false,
-  className = ''
+  className = '',
+  align = 'auto',
+  dropdownWidth = 'auto'
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -52,16 +56,25 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
     const shouldOpenUp = spaceBelow < 280 && spaceAbove > spaceBelow;
     setOpenDirection(shouldOpenUp ? 'up' : 'down');
 
-    // Alineación horizontal: si desbordaría por la derecha, anclar a la derecha
-    const spaceRight = viewportWidth - rect.left;
-    const shouldAlignRight = spaceRight < 220 && rect.right >= 200;
-    setHorizontalAlign(shouldAlignRight ? 'right' : 'left');
+    // Alineación horizontal: respeta prop align o calcula según posición en la pantalla
+    if (align === 'right') {
+      setHorizontalAlign('right');
+    } else if (align === 'left') {
+      setHorizontalAlign('left');
+    } else {
+      const spaceRight = viewportWidth - rect.left;
+      const isRightSided =
+        spaceRight < 260 ||
+        (rect.left + rect.width / 2 > viewportWidth / 2 && spaceRight < 340) ||
+        rect.right > viewportWidth - 200;
+      setHorizontalAlign(isRightSided ? 'right' : 'left');
+    }
 
     // Altura máxima del listado acorde al espacio libre restante (restando barra de búsqueda y márgenes de seguridad)
     const availableSpace = shouldOpenUp ? spaceAbove : spaceBelow;
     const computedHeight = Math.max(120, Math.min(240, availableSpace - 68));
     setMaxListHeight(computedHeight);
-  }, []);
+  }, [align]);
 
   const handleToggleOpen = () => {
     if (disabled) return;
@@ -184,7 +197,9 @@ export const SearchableSelect: React.FC<SearchableSelectProps> = ({
       {/* Dropdown Menu */}
       {isOpen && (
         <div
-          className={`absolute z-50 min-w-[200px] max-w-[calc(100vw-24px)] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${
+          className={`absolute z-50 ${
+            dropdownWidth === 'match-trigger' ? 'w-full' : 'min-w-[200px] max-w-[calc(100vw-24px)]'
+          } bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-100 ${
             horizontalAlign === 'right' ? 'right-0' : 'left-0'
           } ${
             openDirection === 'up'
