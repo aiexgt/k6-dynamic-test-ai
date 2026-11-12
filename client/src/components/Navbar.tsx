@@ -11,12 +11,13 @@ import {
   ShieldCheck,
   ShieldAlert,
   Settings,
-  Trash2
+  Trash2,
+  ListOrdered
 } from 'lucide-react';
 import { Environment, UserProfile } from '../types';
 import { SearchableSelect } from './common/SearchableSelect';
 
-export type NavigationTab = 'playground' | 'flows' | 'variants' | 'categories' | 'environments' | 'global-tests' | 'analytics';
+export type NavigationTab = 'playground' | 'flows' | 'flow-sets' | 'variants' | 'categories' | 'environments' | 'global-tests' | 'analytics';
 
 interface NavbarProps {
   activeTab: NavigationTab;
@@ -101,6 +102,18 @@ export const Navbar: React.FC<NavbarProps> = ({
             >
               <BookmarkCheck className="w-3.5 h-3.5" />
               <span>Flujos</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('flow-sets')}
+              className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                activeTab === 'flow-sets'
+                  ? 'bg-orange-600 text-white shadow-sm'
+                  : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+              }`}
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+              <span>Sets</span>
             </button>
 
             <button

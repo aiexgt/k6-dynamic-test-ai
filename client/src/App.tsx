@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Navbar, NavigationTab } from './components/Navbar';
 import { FlowRunner } from './components/Playground/FlowRunner';
 import { SavedFlowsList } from './components/Flows/SavedFlowsList';
+import { FlowSetsView } from './components/FlowSets/FlowSetsView';
 import { VariantCatalog } from './components/Variants/VariantCatalog';
 import { CategoriesView } from './components/Categories/CategoriesView';
 import { EnvironmentsView } from './components/Environments/EnvironmentsView';
@@ -21,7 +22,7 @@ export function App() {
   const getInitialTab = (): NavigationTab => {
     const p = typeof window !== 'undefined' ? window.location.pathname.replace(/^\//, '').toLowerCase() : '';
     const validTabs: NavigationTab[] = [
-      'playground', 'flows', 'variants', 'categories', 'environments', 'global-tests', 'analytics'
+      'playground', 'flows', 'flow-sets', 'variants', 'categories', 'environments', 'global-tests', 'analytics'
     ];
     for (const t of validTabs) {
       if (p.startsWith(t)) return t;
@@ -316,6 +317,13 @@ export function App() {
         {activeTab === 'flows' && (
           <SavedFlowsList
             onLoadFlowInPlayground={handleLoadFlowInPlayground}
+            environments={environments}
+            activeEnvironmentId={settings?.activeEnvironmentId}
+            onNavigateToMetrics={navigateToMetrics}
+          />
+        )}
+        {activeTab === 'flow-sets' && (
+          <FlowSetsView
             environments={environments}
             activeEnvironmentId={settings?.activeEnvironmentId}
             onNavigateToMetrics={navigateToMetrics}

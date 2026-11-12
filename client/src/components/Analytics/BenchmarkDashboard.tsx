@@ -31,10 +31,10 @@ export const BenchmarkDashboard: React.FC = () => {
     return 'history';
   });
 
-  const [typeFilter, setTypeFilter] = useState<'ALL' | 'FLOW' | 'SINGLE'>(() => {
+  const [typeFilter, setTypeFilter] = useState<'ALL' | 'FLOW' | 'SINGLE' | 'SUITE' | 'LOAD_TEST'>(() => {
     if (typeof window !== 'undefined') {
-      const t = new URLSearchParams(window.location.search).get('type');
-      if (t === 'FLOW' || t === 'SINGLE' || t === 'ALL') return t;
+      const t = new URLSearchParams(window.location.search).get('type') as any;
+      if (t === 'FLOW' || t === 'SINGLE' || t === 'SUITE' || t === 'LOAD_TEST' || t === 'ALL') return t;
     }
     return 'ALL';
   });
@@ -85,7 +85,7 @@ export const BenchmarkDashboard: React.FC = () => {
     updateUrl({ view: mode });
   };
 
-  const handleTypeFilterChange = (filter: 'ALL' | 'FLOW' | 'SINGLE') => {
+  const handleTypeFilterChange = (filter: 'ALL' | 'FLOW' | 'SINGLE' | 'SUITE' | 'LOAD_TEST') => {
     setTypeFilter(filter);
     setHistoryPage(1);
     updateUrl({ type: filter });
@@ -204,8 +204,10 @@ export const BenchmarkDashboard: React.FC = () => {
 
   // Filtered History
   const filteredHistory = history.filter(h => {
-    if (typeFilter === 'FLOW') return h.executionType === 'FLOW';
+    if (typeFilter === 'FLOW') return h.executionType === 'FLOW' && !h.targetName?.startsWith('[SET]') && !h.targetName?.includes('[Prueba de Carga');
     if (typeFilter === 'SINGLE') return h.executionType === 'SINGLE';
+    if (typeFilter === 'SUITE') return h.executionType === 'SUITE' || h.targetName?.startsWith('[SET]');
+    if (typeFilter === 'LOAD_TEST') return h.executionType === 'LOAD_TEST' || h.targetName?.includes('[Prueba de Carga');
     return true;
   });
 
@@ -350,6 +352,26 @@ export const BenchmarkDashboard: React.FC = () => {
                 Flujos
               </button>
               <button
+                onClick={() => handleTypeFilterChange('SUITE')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  typeFilter === 'SUITE'
+                    ? 'bg-orange-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                }`}
+              >
+                Sets
+              </button>
+              <button
+                onClick={() => handleTypeFilterChange('LOAD_TEST')}
+                className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
+                  typeFilter === 'LOAD_TEST'
+                    ? 'bg-indigo-600 text-white shadow-xs'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-300'
+                }`}
+              >
+                Carga (k6)
+              </button>
+              <button
                 onClick={() => handleTypeFilterChange('SINGLE')}
                 className={`px-2.5 py-1 rounded-lg font-semibold transition-all ${
                   typeFilter === 'SINGLE'
@@ -475,6 +497,8 @@ export const BenchmarkDashboard: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     {paginatedHistory.map(run => {
+                      const isSuite = run.executionType === 'SUITE' || run.targetName?.startsWith('[SET]');
+                      const isLoadTest = run.executionType === 'LOAD_TEST' || run.targetName?.includes('[Prueba de Carga');
                       const isSingle = run.executionType === 'SINGLE';
                       const totalT = (run.totalTestsPassed || 0) + (run.totalTestsFailed || 0);
 
@@ -487,12 +511,16 @@ export const BenchmarkDashboard: React.FC = () => {
                           <td className="px-4 py-3">
                             <span
                               className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
-                                isSingle
+                                isSuite
+                                  ? 'bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20'
+                                  : isLoadTest
+                                  ? 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20'
+                                  : isSingle
                                   ? 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20'
                                   : 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20'
                               }`}
                             >
-                              {isSingle ? 'Individual' : 'Flujo'}
+                              {isSuite ? 'Set / Suite' : isLoadTest ? 'Carga k6' : isSingle ? 'Individual' : 'Flujo'}
                             </span>
                           </td>
 

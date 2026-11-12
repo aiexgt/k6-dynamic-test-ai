@@ -544,7 +544,21 @@ export class FlowExecutionService {
       : effectiveSettings.magentoUrl;
 
     let targetUrl = baseApiUrl;
-    if (isRest && effectiveEndpoint) {
+
+    // Priorizar customUrl asignado a la variante o al paso (Requirement 4)
+    const effectiveCustomUrl = (step.customUrl !== undefined ? step.customUrl : variant.customUrl)?.trim();
+    if (effectiveCustomUrl) {
+      let interpolatedCustomUrl = interpolateString(effectiveCustomUrl, allContextVars);
+      if (/^https?:\/\//i.test(interpolatedCustomUrl)) {
+        targetUrl = interpolatedCustomUrl;
+      } else {
+        const baseUrl = baseApiUrl.replace(/\/graphql\/?$/i, '').replace(/\/+$/, '');
+        if (!interpolatedCustomUrl.startsWith('/')) {
+          interpolatedCustomUrl = '/' + interpolatedCustomUrl;
+        }
+        targetUrl = baseUrl + interpolatedCustomUrl;
+      }
+    } else if (isRest && effectiveEndpoint) {
       let interpolatedEndpoint = interpolateString(effectiveEndpoint.trim(), allContextVars);
       if (/^https?:\/\//i.test(interpolatedEndpoint)) {
         targetUrl = interpolatedEndpoint;
@@ -554,6 +568,20 @@ export class FlowExecutionService {
           interpolatedEndpoint = '/' + interpolatedEndpoint;
         }
         targetUrl = baseUrl + interpolatedEndpoint;
+      }
+    }
+
+    // 7. Modo Debugger (Xdebug) - Agrega ?XDEBUG_SESSION_START=PHPSTORM y Cookie
+    const isDebugMode = !!(step.debugMode || (settings as any)?.debugMode || (effectiveSettings as any)?.debugMode);
+    if (isDebugMode) {
+      const sep = targetUrl.includes('?') ? '&' : '?';
+      if (!targetUrl.includes('XDEBUG_SESSION_START=')) {
+        targetUrl = `${targetUrl}${sep}XDEBUG_SESSION_START=PHPSTORM`;
+      }
+      if (!headers['Cookie']) {
+        headers['Cookie'] = 'XDEBUG_SESSION=PHPSTORM';
+      } else if (!headers['Cookie'].includes('XDEBUG_SESSION=')) {
+        headers['Cookie'] = `${headers['Cookie']}; XDEBUG_SESSION=PHPSTORM`;
       }
     }
 

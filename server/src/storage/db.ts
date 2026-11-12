@@ -5,6 +5,7 @@ import { Pool } from 'pg';
 import {
   Variant,
   SavedFlow,
+  FlowSet,
   FlowExecutionResponse,
   EnvironmentSettings,
   Environment,
@@ -223,6 +224,8 @@ export class Database {
   private static environmentsLoaded = false;
   private static flowsCache: SavedFlow[] = [];
   private static flowsLoaded = false;
+  private static flowSetsCache: FlowSet[] = [];
+  private static flowSetsLoaded = false;
   private static settingsCache: EnvironmentSettings | null = null;
   private static historyCache: FlowExecutionResponse[] = [];
   private static historyLoaded = false;
@@ -260,6 +263,8 @@ export class Database {
     this.environmentsLoaded = true;
     this.flowsCache = readJsonFile<SavedFlow[]>('flows.json', []);
     this.flowsLoaded = true;
+    this.flowSetsCache = readJsonFile<FlowSet[]>('flow_sets.json', []);
+    this.flowSetsLoaded = true;
     this.historyCache = readJsonFile<FlowExecutionResponse[]>('history.json', []);
     this.historyLoaded = true;
     this.globalTestsCache = readJsonFile<GlobalTestConfig[]>('global_tests.json', DEFAULT_GLOBAL_TESTS);
@@ -394,6 +399,7 @@ export class Database {
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS body TEXT;
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS environment_id VARCHAR(255);
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS disabled_headers JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE variants ADD COLUMN IF NOT EXISTS custom_url TEXT;
       
       -- Authorship & Soft delete for variants
       ALTER TABLE variants ADD COLUMN IF NOT EXISTS created_by VARCHAR(255);
@@ -457,6 +463,21 @@ export class Database {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
       CREATE INDEX IF NOT EXISTS idx_item_versions_entity ON item_versions(entity_type, entity_id, version_number DESC);
+
+      CREATE TABLE IF NOT EXISTS flow_sets (
+        id VARCHAR(255) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        description TEXT,
+        flow_ids JSONB DEFAULT '[]'::jsonb,
+        delay_between_flows_ms INT DEFAULT 500,
+        stop_on_failure BOOLEAN DEFAULT TRUE,
+        created_by VARCHAR(255),
+        created_by_name VARCHAR(255),
+        updated_by VARCHAR(255),
+        updated_by_name VARCHAR(255),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
     `);
 
     // Ensure default master admin pin is seeded if not present
@@ -613,6 +634,7 @@ export class Database {
           contextMapping: r.context_mapping,
           customHeaders: r.custom_headers || {},
           disabledHeaders: r.disabled_headers || [],
+          customUrl: r.custom_url || undefined,
           environmentOverrides: r.environment_overrides || {},
           environmentId: r.environment_id || null,
           customValidations: r.custom_validations || [],
@@ -653,6 +675,23 @@ export class Database {
           updatedAt: r.updated_at?.toISOString?.() || r.updated_at
         }));
         this.flowsLoaded = true;
+
+        const setRes = await sharedPgPool.query('SELECT * FROM flow_sets ORDER BY created_at ASC');
+        this.flowSetsCache = setRes.rows.map(r => ({
+          id: r.id,
+          name: r.name,
+          description: r.description || '',
+          flowIds: r.flow_ids || [],
+          delayBetweenFlowsMs: r.delay_between_flows_ms !== undefined ? r.delay_between_flows_ms : 500,
+          stopOnFailure: r.stop_on_failure !== false,
+          createdBy: r.created_by,
+          createdByName: r.created_by_name,
+          updatedBy: r.updated_by,
+          updatedByName: r.updated_by_name,
+          createdAt: r.created_at?.toISOString?.() || r.created_at,
+          updatedAt: r.updated_at?.toISOString?.() || r.updated_at
+        }));
+        this.flowSetsLoaded = true;
       } catch (err: any) {
         console.error('Error sincronizando desde DB Central:', err.message);
       }
@@ -759,7 +798,85 @@ export class Database {
       changeSummary || (isNew ? 'Creación inicial de variante' : 'Actualización de variante')
     );
 
+    // Sincronizar variables de la variante en todos los environments (Requirement 3)
+    this.syncVariantVariablesToAllEnvironments(finalVar);
+
     return finalVar;
+  }
+
+  /**
+   * Propaga automáticamente cualquier variable definida o extraída en una variante hacia todos los entornos
+   */
+  static syncVariantVariablesToAllEnvironments(variant: Variant): void {
+    const varKeys = new Set<string>();
+
+    // 1. Claves de contextMapping (variables capturadas de la respuesta)
+    if (variant.contextMapping && typeof variant.contextMapping === 'object') {
+      Object.keys(variant.contextMapping).forEach(k => {
+        if (k && k.trim()) varKeys.add(k.trim());
+      });
+    }
+
+    // 2. Claves de defaultVariables
+    if (variant.defaultVariables && typeof variant.defaultVariables === 'object') {
+      Object.keys(variant.defaultVariables).forEach(k => {
+        if (k && k.trim()) varKeys.add(k.trim());
+      });
+    }
+
+    // 3. contextOutputs
+    if (Array.isArray(variant.contextOutputs)) {
+      variant.contextOutputs.forEach(k => {
+        if (k && k.trim()) varKeys.add(k.trim());
+      });
+    }
+
+    // 4. Variables referenciadas {{varName}} en query, body, endpoint, customUrl
+    const textToScan = `${variant.query || ''} ${variant.body || ''} ${variant.endpoint || ''} ${variant.customUrl || ''}`;
+    const regex = /\{\{([a-zA-Z0-9_.-]+)\}\}/g;
+    let match;
+    while ((match = regex.exec(textToScan)) !== null) {
+      if (match[1] && match[1].trim()) {
+        varKeys.add(match[1].trim());
+      }
+    }
+
+    if (varKeys.size === 0) return;
+
+    try {
+      const envs = this.getEnvironments();
+      let anyChanged = false;
+
+      for (const env of envs) {
+        let envModified = false;
+        const currentVars = { ...(env.variables || {}) };
+
+        for (const key of varKeys) {
+          if (!(key in currentVars)) {
+            const defaultVal =
+              variant.defaultVariables?.[key] !== undefined
+                ? typeof variant.defaultVariables[key] === 'object'
+                  ? JSON.stringify(variant.defaultVariables[key])
+                  : String(variant.defaultVariables[key])
+                : '';
+            currentVars[key] = defaultVal;
+            envModified = true;
+          }
+        }
+
+        if (envModified) {
+          env.variables = currentVars;
+          this.upsertEnvironment(env);
+          anyChanged = true;
+        }
+      }
+
+      if (anyChanged) {
+        console.log(`✅ [Variables Sync] Sincronizadas ${varKeys.size} variables en ${envs.length} entornos.`);
+      }
+    } catch (err: any) {
+      console.error('Error sincronizando variables en entornos:', err.message);
+    }
   }
 
   private static async insertVariantPg(pool: Pool, v: Variant): Promise<void> {
@@ -767,19 +884,19 @@ export class Database {
       `INSERT INTO variants (
         id, name, category, stage, description, query, default_variables,
         context_outputs, context_mapping, environment_overrides, custom_validations,
-        custom_headers, disabled_headers, is_virtual_only, api_type, method, endpoint, body, environment_id,
+        custom_headers, disabled_headers, is_virtual_only, api_type, method, endpoint, body, environment_id, custom_url,
         created_by, created_by_name, updated_by, updated_by_name,
         is_deleted, deleted_at, deleted_by, deleted_by_name,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
       ON CONFLICT (id) DO UPDATE SET
         name = $2, category = $3, stage = $4, description = $5, query = $6,
         default_variables = $7, context_outputs = $8, context_mapping = $9, environment_overrides = $10,
         custom_validations = $11, custom_headers = $12, disabled_headers = $13, is_virtual_only = $14, api_type = $15, method = $16,
-        endpoint = $17, body = $18, environment_id = $19,
-        updated_by = $22, updated_by_name = $23,
-        is_deleted = $24, deleted_at = $25, deleted_by = $26, deleted_by_name = $27,
-        updated_at = $29`,
+        endpoint = $17, body = $18, environment_id = $19, custom_url = $20,
+        updated_by = $23, updated_by_name = $24,
+        is_deleted = $25, deleted_at = $26, deleted_by = $27, deleted_by_name = $28,
+        updated_at = $30`,
       [
         v.id,
         v.name,
@@ -800,6 +917,7 @@ export class Database {
         v.endpoint || '',
         v.body || '',
         v.environmentId || null,
+        v.customUrl || null,
         v.createdBy || null,
         v.createdByName || null,
         v.updatedBy || null,
@@ -1131,6 +1249,96 @@ export class Database {
       this.saveFlows(filtered);
       if (sharedPgPool && isSharedPgConnected) {
         sharedPgPool.query('DELETE FROM flows WHERE id = $1', [id]).catch(console.error);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  // --- FLOW SETS (SUITES) CRUD ---
+  static getFlowSets(): FlowSet[] {
+    if (!this.flowSetsLoaded) {
+      this.flowSetsCache = readJsonFile<FlowSet[]>('flow_sets.json', []);
+      this.flowSetsLoaded = true;
+    }
+    return this.flowSetsCache;
+  }
+
+  static saveFlowSets(sets: FlowSet[]): void {
+    this.flowSetsCache = sets;
+    this.flowSetsLoaded = true;
+    writeJsonFile('flow_sets.json', sets);
+  }
+
+  static getFlowSetById(id: string): FlowSet | undefined {
+    return this.getFlowSets().find(s => s.id === id);
+  }
+
+  static upsertFlowSet(flowSet: FlowSet, user?: Partial<UserProfile>): FlowSet {
+    const sets = this.getFlowSets();
+    const index = sets.findIndex(s => s.id === flowSet.id);
+    const now = new Date().toISOString();
+    let finalSet: FlowSet;
+
+    if (index >= 0) {
+      finalSet = {
+        ...flowSet,
+        updatedAt: now,
+        updatedBy: user?.email || flowSet.updatedBy,
+        updatedByName: user?.name || flowSet.updatedByName
+      };
+      sets[index] = finalSet;
+    } else {
+      finalSet = {
+        ...flowSet,
+        createdAt: now,
+        updatedAt: now,
+        createdBy: user?.email || flowSet.createdBy,
+        createdByName: user?.name || flowSet.createdByName,
+        updatedBy: user?.email || flowSet.updatedBy,
+        updatedByName: user?.name || flowSet.updatedByName
+      };
+      sets.push(finalSet);
+    }
+
+    this.saveFlowSets(sets);
+
+    if (sharedPgPool && isSharedPgConnected) {
+      sharedPgPool.query(
+        `INSERT INTO flow_sets (
+          id, name, description, flow_ids, delay_between_flows_ms, stop_on_failure,
+          created_by, created_by_name, updated_by, updated_by_name, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ON CONFLICT (id) DO UPDATE SET
+          name = $2, description = $3, flow_ids = $4, delay_between_flows_ms = $5,
+          stop_on_failure = $6, updated_by = $9, updated_by_name = $10, updated_at = $12`,
+        [
+          finalSet.id,
+          finalSet.name,
+          finalSet.description || '',
+          JSON.stringify(finalSet.flowIds || []),
+          finalSet.delayBetweenFlowsMs !== undefined ? finalSet.delayBetweenFlowsMs : 500,
+          finalSet.stopOnFailure !== false,
+          finalSet.createdBy || null,
+          finalSet.createdByName || null,
+          finalSet.updatedBy || null,
+          finalSet.updatedByName || null,
+          finalSet.createdAt,
+          finalSet.updatedAt
+        ]
+      ).catch(err => console.error('Error guardando flow set en PG:', err.message));
+    }
+
+    return finalSet;
+  }
+
+  static deleteFlowSet(id: string): boolean {
+    const sets = this.getFlowSets();
+    const filtered = sets.filter(s => s.id !== id);
+    if (filtered.length !== sets.length) {
+      this.saveFlowSets(filtered);
+      if (sharedPgPool && isSharedPgConnected) {
+        sharedPgPool.query('DELETE FROM flow_sets WHERE id = $1', [id]).catch(console.error);
       }
       return true;
     }

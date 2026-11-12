@@ -24,7 +24,9 @@ import {
   Braces,
   Clock,
   X,
-  BarChart3
+  BarChart3,
+  Bug,
+  Users
 } from 'lucide-react';
 import {
   Variant,
@@ -44,6 +46,7 @@ import { StepDetailModal } from './StepDetailModal';
 import { SaveFlowModal } from './SaveFlowModal';
 import { FlowExecutionModal } from './FlowExecutionModal';
 import { CsvDatasetModal } from './CsvDatasetModal';
+import { LoadTestModal } from './LoadTestModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { CodeEditor } from '../common/CodeEditor';
 import { VariantEditorView } from '../Variants/VariantEditorView';
@@ -126,6 +129,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [isVersionModalOpen, setIsVersionModalOpen] = useState(false);
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
   const [isDatasetModalOpen, setIsDatasetModalOpen] = useState(false);
+  const [isLoadTestModalOpen, setIsLoadTestModalOpen] = useState(false);
+  const [debugMode, setDebugMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('flowrunner_debug_mode') === 'true';
+    return false;
+  });
   const isExecutingAll = isExecutionModalOpen;
   const [copiedOrder, setCopiedOrder] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
@@ -133,6 +141,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   // Drag and drop state
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+  const [dragDropPosition, setDragDropPosition] = useState<'before' | 'after'>('after');
   const [dragEnabledIndex, setDragEnabledIndex] = useState<number | null>(null);
 
   // Popover rápido de Sleep en cada paso
@@ -268,26 +277,39 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const handleDragOver = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = 'move';
-    if (dragOverIndex !== index) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const isUpper = (e.clientY - rect.top) < (rect.height / 2);
+    const position = isUpper ? 'before' : 'after';
+    if (dragOverIndex !== index || dragDropPosition !== position) {
       setDragOverIndex(index);
+      setDragDropPosition(position);
     }
   };
 
-  const handleDrop = (e: React.DragEvent, targetIndex: number) => {
+  const handleDrop = (e: React.DragEvent, index: number) => {
     e.preventDefault();
     setDragEnabledIndex(null);
-    if (draggedIndex === null || draggedIndex === targetIndex) {
+    if (draggedIndex === null) {
       setDraggedIndex(null);
       setDragOverIndex(null);
       return;
     }
-    const newSteps = [...steps];
-    const [movedStep] = newSteps.splice(draggedIndex, 1);
-    newSteps.splice(targetIndex, 0, movedStep);
-    setSteps(newSteps);
+
+    let targetIndex = dragDropPosition === 'before' ? index : index + 1;
+    if (draggedIndex < targetIndex) {
+      targetIndex -= 1;
+    }
+
+    if (draggedIndex !== targetIndex) {
+      const newSteps = [...steps];
+      const [movedStep] = newSteps.splice(draggedIndex, 1);
+      newSteps.splice(targetIndex, 0, movedStep);
+      setSteps(newSteps);
+      toast('Paso reordenado', 'info');
+    }
+
     setDraggedIndex(null);
     setDragOverIndex(null);
-    toast('Paso reordenado', 'info');
   };
 
   const handleDragEnd = () => {
@@ -489,12 +511,13 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       if (activeFlow.isLocked) {
         const unlocked = await api.unlockFlow(activeFlow.id);
         setSavedFlows(prev => prev.map(f => (f.id === unlocked.id ? unlocked : f)));
-        setSavedSnapshot(serializeFlowState(steps, dataset, variants));
+        // Requirement 2: Mantener savedSnapshot con los pasos guardados en BD para que los cambios editados muestren el botón de Guardar
+        setSavedSnapshot(serializeFlowState(unlocked.steps, unlocked.dataset));
         toast('Flujo desbloqueado exitosamente', 'success');
       } else {
         const locked = await api.lockFlow(activeFlow.id);
         setSavedFlows(prev => prev.map(f => (f.id === locked.id ? locked : f)));
-        setSavedSnapshot(serializeFlowState(steps, dataset, variants));
+        setSavedSnapshot(serializeFlowState(locked.steps, locked.dataset));
         toast('Flujo marcado como bloqueado', 'success');
       }
     } catch (err: any) {
@@ -898,9 +921,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
 
     try {
       const response = await api.executeStep(
-        step,
+        { ...step, debugMode: debugMode || step.debugMode },
         executionContext,
-        undefined,
+        { debugMode },
         true,
         controller.signal
       );
@@ -1039,7 +1062,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
               <span>Agregar Paso</span>
             </button>
 
-            {/* Botón de Cambios sin guardar: sólo visible cuando hay cambios sin guardar */}
+            {/* Botón de Cambios sin guardar / Guardar */}
             {hasUnsavedChanges && (
               <button
                 onClick={handleSaveClick}
@@ -1047,7 +1070,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                 title="Hay cambios sin guardar. Haz clic para guardar el flujo."
               >
                 <Save className="w-3.5 h-3.5" />
-                <span>Cambios sin guardar</span>
+                <span>Guardar cambios</span>
               </button>
             )}
 
@@ -1090,6 +1113,41 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                 )}
               </button>
             )}
+
+            {/* Botón Debugger / Xdebug */}
+            <button
+              onClick={() => {
+                const next = !debugMode;
+                setDebugMode(next);
+                if (typeof window !== 'undefined') localStorage.setItem('flowrunner_debug_mode', String(next));
+                toast(next ? 'Modo Debugger activado (?XDEBUG_SESSION_START=PHPSTORM)' : 'Modo Debugger desactivado', 'info');
+              }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+                debugMode
+                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-600 dark:text-purple-300 font-bold'
+                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Activar modo Debugger (agrega ?XDEBUG_SESSION_START=PHPSTORM y cookies de Xdebug a las peticiones)"
+            >
+              <Bug className={`w-3.5 h-3.5 ${debugMode ? 'text-purple-500' : 'text-slate-400'}`} />
+              <span>Xdebug {debugMode ? 'ON' : 'OFF'}</span>
+            </button>
+
+            {/* Botón Pruebas de Carga Multi-usuario (k6) */}
+            <button
+              onClick={() => {
+                if (steps.filter(s => !s.skipped && s.variantId).length === 0) {
+                  toast('Agrega pasos activos con variantes para configurar pruebas de carga', 'info');
+                  return;
+                }
+                setIsLoadTestModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-indigo-200 dark:border-indigo-800/60 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/50 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all shadow-xs"
+              title="Pruebas de concurrencia y simulación de tráfico multi-usuario (k6)"
+            >
+              <Users className="w-3.5 h-3.5 text-indigo-500" />
+              <span>Carga / k6</span>
+            </button>
 
             {/* Botón Matriz CSV / Dataset */}
             <button
@@ -1300,32 +1358,61 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             }));
             const selectedVar = variants.find(v => v.id === step.variantId);
 
+            const isDropBefore =
+              draggedIndex !== null &&
+              dragOverIndex === idx &&
+              dragDropPosition === 'before' &&
+              draggedIndex !== idx &&
+              draggedIndex !== idx - 1;
+
+            const isDropAfter =
+              draggedIndex !== null &&
+              dragOverIndex === idx &&
+              dragDropPosition === 'after' &&
+              draggedIndex !== idx &&
+              draggedIndex !== idx + 1;
+
             return (
-              <div
-                key={step.id}
-                draggable={dragEnabledIndex === idx && !isExecutingAll && !runningStepId}
-                onDragStart={e => handleDragStart(e, idx)}
-                onDragOver={e => handleDragOver(e, idx)}
-                onDrop={e => {
-                  setDragEnabledIndex(null);
-                  handleDrop(e, idx);
-                }}
-                onDragEnd={() => {
-                  setDragEnabledIndex(null);
-                  handleDragEnd();
-                }}
-                className={`border rounded-xl transition-all shadow-xs ${
-                  draggedIndex === idx
-                    ? 'opacity-40 border-dashed border-orange-500 scale-[0.99]'
-                    : dragOverIndex === idx && draggedIndex !== idx
-                    ? 'border-orange-500 ring-2 ring-orange-500/20'
-                    : ''
-                } ${
-                  isSkipped
-                    ? 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800/50 opacity-50'
-                    : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
-                }`}
-              >
+              <React.Fragment key={step.id}>
+                {isDropBefore && (
+                  <div
+                    onDragOver={e => handleDragOver(e, idx)}
+                    onDrop={e => {
+                      setDragEnabledIndex(null);
+                      handleDrop(e, idx);
+                    }}
+                    className="h-12 border-2 border-dashed border-orange-500 bg-orange-500/10 dark:bg-orange-950/20 rounded-xl flex items-center justify-center transition-all duration-150 animate-pulse my-1.5 shadow-inner"
+                  >
+                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 font-mono flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
+                      Mover aquí (Posición #{idx + 1})
+                    </span>
+                  </div>
+                )}
+                <div
+                  draggable={dragEnabledIndex === idx && !isExecutingAll && !runningStepId}
+                  onDragStart={e => handleDragStart(e, idx)}
+                  onDragOver={e => handleDragOver(e, idx)}
+                  onDrop={e => {
+                    setDragEnabledIndex(null);
+                    handleDrop(e, idx);
+                  }}
+                  onDragEnd={() => {
+                    setDragEnabledIndex(null);
+                    handleDragEnd();
+                  }}
+                  className={`border rounded-xl transition-all shadow-xs ${
+                    draggedIndex === idx
+                      ? 'opacity-40 border-dashed border-orange-500 scale-[0.99]'
+                      : dragOverIndex === idx && draggedIndex !== idx
+                      ? 'border-orange-500 ring-2 ring-orange-500/20'
+                      : ''
+                  } ${
+                    isSkipped
+                      ? 'bg-slate-50 dark:bg-slate-900/30 border-slate-200 dark:border-slate-800/50 opacity-50'
+                      : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800'
+                  }`}
+                >
                 <div className="p-3 flex flex-col md:flex-row md:items-center justify-between gap-2.5">
                   {/* Step Index & Order Reorder */}
                   <div className="flex items-center gap-1.5 min-w-[75px]">
@@ -1901,7 +1988,23 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                     )}
                   </div>
                 )}
-              </div>
+                </div>
+                {isDropAfter && (
+                  <div
+                    onDragOver={e => handleDragOver(e, idx)}
+                    onDrop={e => {
+                      setDragEnabledIndex(null);
+                      handleDrop(e, idx);
+                    }}
+                    className="h-12 border-2 border-dashed border-orange-500 bg-orange-500/10 dark:bg-orange-950/20 rounded-xl flex items-center justify-center transition-all duration-150 animate-pulse my-1.5 shadow-inner"
+                  >
+                    <span className="text-xs font-bold text-orange-600 dark:text-orange-400 font-mono flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-orange-500 animate-ping" />
+                      Mover aquí (Posición #{idx + 2})
+                    </span>
+                  </div>
+                )}
+              </React.Fragment>
             );
           })
         )}
@@ -1939,6 +2042,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         variants={variants}
         dataset={dataset}
         initialContext={executionContext}
+        debugMode={debugMode}
         onExecutionComplete={(result, resultMap, finalContext) => {
           setExecutionResult(result);
           setStepResults(resultMap);
@@ -1981,6 +2085,18 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             toast('Dataset removido del flujo', 'info');
           }
         }}
+      />
+
+      <LoadTestModal
+        isOpen={isLoadTestModalOpen}
+        onClose={() => setIsLoadTestModalOpen(false)}
+        flowName={activeFlow?.name || 'Pipeline de Checkout'}
+        steps={steps}
+        variants={variants}
+        dataset={dataset}
+        initialContext={executionContext}
+        debugMode={debugMode}
+        onNavigateToMetrics={onNavigateToMetrics}
       />
     </div>
   );

@@ -23,6 +23,7 @@ interface FlowExecutionModalProps {
   dataset?: CsvDataset;
   defaultDelayMs?: number;
   initialContext?: ExecutionContext;
+  debugMode?: boolean;
   onExecutionComplete: (
     result: FlowExecutionResponse,
     stepResultsMap: Record<string, StepExecutionResult>,
@@ -86,6 +87,7 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
   dataset,
   defaultDelayMs = 0,
   initialContext,
+  debugMode = false,
   onExecutionComplete,
   onInspectStep,
   onNavigateToMetrics
@@ -308,9 +310,9 @@ export const FlowExecutionModal: React.FC<FlowExecutionModalProps> = ({
 
         try {
           const response = await api.executeStep(
-            stepWithCsvVars,
+            { ...stepWithCsvVars, debugMode: debugMode || stepWithCsvVars.debugMode },
             runningCtx,
-            undefined,
+            { debugMode },
             false,
             fetchAbortControllerRef.current?.signal
           );

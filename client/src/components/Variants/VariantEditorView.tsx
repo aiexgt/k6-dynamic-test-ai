@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical, Sliders, Braces, Ban, RotateCcw, X } from 'lucide-react';
+import { ArrowLeft, Save, Plus, Code2, Globe, Trash2, ShieldCheck, Variable, Terminal, FlaskConical, Sliders, Braces, Ban, RotateCcw, X, Link2 } from 'lucide-react';
 import { Variant, CustomValidation, ValidationType, ApiType, HttpMethod, Environment } from '../../types';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { CodeEditor } from '../common/CodeEditor';
@@ -86,28 +86,20 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
   const [validations, setValidations] = useState<CustomValidation[]>([]);
   const [isTesterOpen, setIsTesterOpen] = useState(false);
 
-  // Environments
+  // Environments & Custom URL (Requirement 4: Link diferente que se guarde en la variante)
   const [environments, setEnvironments] = useState<Environment[]>([]);
-  const [useCustomEnvironment, setUseCustomEnvironment] = useState<boolean>(!!initialVariant?.environmentId);
-  const [selectedEnvironmentId, setSelectedEnvironmentId] = useState<string>(initialVariant?.environmentId || '');
+  const [useCustomUrl, setUseCustomUrl] = useState<boolean>(!!initialVariant?.customUrl);
+  const [customUrl, setCustomUrl] = useState<string>(initialVariant?.customUrl || '');
 
   useEffect(() => {
     api.getEnvironments().then(envs => {
       setEnvironments(envs);
-      if (initialVariant?.environmentId) {
-        setSelectedEnvironmentId(initialVariant.environmentId);
-      } else if (envs.length > 0 && !selectedEnvironmentId) {
-        setSelectedEnvironmentId(envs[0].id);
-      }
     }).catch(console.error);
   }, [initialVariant]);
 
   const targetEnv = useMemo(() => {
-    if (useCustomEnvironment && selectedEnvironmentId) {
-      return environments.find(e => e.id === selectedEnvironmentId) || environments[0];
-    }
-    return environments[0];
-  }, [environments, useCustomEnvironment, selectedEnvironmentId]);
+    return environments[0] || null;
+  }, [environments]);
 
   const inheritedEnvHeaders = useMemo(() => {
     if (!targetEnv) return {};
@@ -190,13 +182,14 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       contextMapping: parsedMapping,
       customHeaders: cHeaders,
       disabledHeaders,
-      environmentId: useCustomEnvironment ? (selectedEnvironmentId || null) : null,
+      customUrl: useCustomUrl && customUrl.trim() ? customUrl.trim() : undefined,
+      environmentId: null,
       customValidations: validations,
       isVirtualOnly,
       createdAt: initialVariant?.createdAt || new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
-  }, [initialVariant, name, category, isCreatingNewCat, newCategoryName, description, apiType, method, endpoint, body, query, defaultVariablesStr, contextOutputsStr, headerRows, disabledHeaders, mappingRows, validations, isVirtualOnly, useCustomEnvironment, selectedEnvironmentId]);
+  }, [initialVariant, name, category, isCreatingNewCat, newCategoryName, description, apiType, method, endpoint, body, query, defaultVariablesStr, contextOutputsStr, headerRows, disabledHeaders, mappingRows, validations, isVirtualOnly, useCustomUrl, customUrl]);
 
   const handleTesterUpdated = (updated: Variant) => {
     setQuery(updated.query || '');
@@ -236,8 +229,8 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       setContextOutputsStr((initialVariant.contextOutputs || []).join(', '));
       setIsVirtualOnly(!!initialVariant.isVirtualOnly);
       setValidations(initialVariant.customValidations || []);
-      setUseCustomEnvironment(!!initialVariant.environmentId);
-      setSelectedEnvironmentId(initialVariant.environmentId || '');
+      setUseCustomUrl(!!initialVariant.customUrl);
+      setCustomUrl(initialVariant.customUrl || '');
 
       // Mapping Rows (Response -> Variable)
       const ctxMap = initialVariant.contextMapping || {};
@@ -269,8 +262,8 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       setDisabledHeaders([]);
       setContextOutputsStr('');
       setIsVirtualOnly(false);
-      setUseCustomEnvironment(false);
-      setSelectedEnvironmentId(environments[0]?.id || '');
+      setUseCustomUrl(false);
+      setCustomUrl('');
       setValidations([
         {
           id: 'val-' + Date.now().toString(36) + '-1',
@@ -421,7 +414,8 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
       contextMapping: parsedMapping,
       customHeaders: parsedHeaders,
       disabledHeaders: disabledHeaders.filter(Boolean),
-      environmentId: useCustomEnvironment ? (selectedEnvironmentId || null) : null,
+      customUrl: useCustomUrl && customUrl.trim() ? customUrl.trim() : undefined,
+      environmentId: null,
       customValidations: validations,
       isVirtualOnly
     });
@@ -452,8 +446,8 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
     headerRows,
     validations,
     isVirtualOnly,
-    useCustomEnvironment,
-    selectedEnvironmentId,
+    useCustomUrl,
+    customUrl,
     isCreatingNewCat,
     newCategoryName
   ]);
@@ -611,45 +605,34 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
             <div className="flex items-center gap-2">
               <input
                 type="checkbox"
-                id="useCustomEnvironment"
-                checked={useCustomEnvironment}
+                id="useCustomUrl"
+                checked={useCustomUrl}
                 onChange={e => {
                   const checked = e.target.checked;
-                  setUseCustomEnvironment(checked);
-                  if (checked && !selectedEnvironmentId && environments.length > 0) {
-                    setSelectedEnvironmentId(environments[0].id);
-                  }
+                  setUseCustomUrl(checked);
                 }}
                 className="rounded border-slate-300 text-orange-600 focus:ring-orange-500 w-4 h-4 cursor-pointer"
               />
-              <label htmlFor="useCustomEnvironment" className="text-xs font-semibold text-slate-700 dark:text-slate-300 select-none cursor-pointer flex items-center gap-1.5">
-                <Globe className="w-3.5 h-3.5 text-blue-500" />
-                <span>Consumir un environment diferente</span>
+              <label htmlFor="useCustomUrl" className="text-xs font-semibold text-slate-700 dark:text-slate-300 select-none cursor-pointer flex items-center gap-1.5">
+                <Link2 className="w-3.5 h-3.5 text-blue-500" />
+                <span>Usar un link / URL destino diferente para esta variante</span>
               </label>
             </div>
 
-            {useCustomEnvironment && (
+            {useCustomUrl && (
               <div className="p-3.5 bg-slate-50 dark:bg-slate-950/60 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2 animate-in fade-in duration-200">
                 <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  Seleccionar Environment para esta variante:
+                  URL / Endpoint destino exclusivo para esta variante:
                 </label>
-                <select
-                  value={selectedEnvironmentId}
-                  onChange={e => setSelectedEnvironmentId(e.target.value)}
-                  className="w-full px-3 py-2 text-xs rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
-                >
-                  {environments.length === 0 ? (
-                    <option value="">No hay entornos disponibles</option>
-                  ) : (
-                    environments.map(env => (
-                      <option key={env.id} value={env.id}>
-                        {env.name} — GraphQL: {env.magentoUrl} {env.magentoRestUrl ? `| REST: ${env.magentoRestUrl}` : ''} {env.useMockSimulator ? '(Mock)' : ''}
-                      </option>
-                    ))
-                  )}
-                </select>
+                <input
+                  type="text"
+                  value={customUrl}
+                  onChange={e => setCustomUrl(e.target.value)}
+                  placeholder="ej: https://api.midominio.com/graphql o https://servicio.test/rest/V1/order"
+                  className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-orange-500 font-medium"
+                />
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Esta variante se ejecutará contra este entorno específico en lugar del entorno activo global.
+                  Esta variante se conectará directamente a este link en lugar de la URL del environment activo, manteniendo intactas las cabeceras y variables del flujo.
                 </p>
               </div>
             )}
@@ -704,7 +687,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
                 language="graphql"
                 value={query}
                 onChange={setQuery}
-                environmentId={useCustomEnvironment ? selectedEnvironmentId : undefined}
+                environmentId={undefined}
                 compactHeight="140px"
                 expandedHeight="480px"
                 defaultExpanded={false}
@@ -720,7 +703,7 @@ export const VariantEditorView: React.FC<VariantEditorViewProps> = ({
                     value={defaultVariablesStr}
                     onChange={setDefaultVariablesStr}
                     graphqlQuery={query}
-                    environmentId={useCustomEnvironment ? selectedEnvironmentId : undefined}
+                    environmentId={undefined}
                     compactHeight="160px"
                     expandedHeight="340px"
                     defaultExpanded={false}

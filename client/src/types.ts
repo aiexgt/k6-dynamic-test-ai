@@ -118,6 +118,7 @@ export interface Variant {
   contextMapping?: Record<string, string>;
   customHeaders?: Record<string, string>;
   disabledHeaders?: string[];
+  customUrl?: string; // Link / URL personalizado directo para esta variante
   environmentOverrides?: Record<string, string>;
   environmentId?: string | null;
   customValidations?: CustomValidation[];
@@ -149,6 +150,8 @@ export interface FlowStepConfig {
   apiType?: ApiType;
   customHeaders?: Record<string, string>;
   disabledHeaders?: string[];
+  customUrl?: string; // Link / URL personalizado para este paso
+  debugMode?: boolean; // Activa modo debugger Xdebug (?XDEBUG_SESSION_START=PHPSTORM)
   contextMapping?: Record<string, string>;
   customValidations?: CustomValidation[];
 }
@@ -181,6 +184,46 @@ export interface SavedFlow {
   deletedByName?: string;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface FlowSet {
+  id: string;
+  name: string;
+  description?: string;
+  flowIds: string[];
+  delayBetweenFlowsMs?: number;
+  stopOnFailure?: boolean;
+  createdBy?: string;
+  createdByName?: string;
+  updatedBy?: string;
+  updatedByName?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface LoadTestConfig {
+  vus: number; // Concurrencia de usuarios
+  mode: 'ITERATIONS' | 'DURATION';
+  iterationsPerVu?: number;
+  durationSeconds?: number;
+  rampUpSeconds?: number;
+  thinkTimeMs?: number;
+}
+
+export interface LoadTestMetrics {
+  vus: number;
+  totalRequests: number;
+  successfulRequests: number;
+  failedRequests: number;
+  durationMs: number;
+  rps: number;
+  p50Ms: number;
+  p90Ms: number;
+  p95Ms: number;
+  p99Ms: number;
+  avgMs: number;
+  minMs: number;
+  maxMs: number;
 }
 
 export interface ExecutionContext {
@@ -218,7 +261,7 @@ export type ExecutionStatus = 'SUCCESS' | 'FAILED' | 'TESTS_FAILED';
 
 export interface FlowExecutionResponse {
   id?: string;
-  executionType?: 'FLOW' | 'SINGLE';
+  executionType?: 'FLOW' | 'SINGLE' | 'SUITE' | 'LOAD_TEST';
   targetName?: string;
   environmentName?: string;
   status: ExecutionStatus;
@@ -231,6 +274,10 @@ export interface FlowExecutionResponse {
   steps: StepExecutionResult[];
   totalTestsPassed?: number;
   totalTestsFailed?: number;
+  suiteId?: string;
+  suiteName?: string;
+  flowRuns?: FlowExecutionResponse[];
+  loadTestMetrics?: LoadTestMetrics;
   createdAt?: string;
 }
 
@@ -244,4 +291,5 @@ export interface EnvironmentSettings {
   restHeaders?: Record<string, string>;
   variables?: Record<string, string>;
   useMockSimulator: boolean;
+  debugMode?: boolean; // Modo Debugger Xdebug
 }

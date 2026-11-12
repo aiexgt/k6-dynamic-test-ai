@@ -1,6 +1,7 @@
 import {
   Variant,
   SavedFlow,
+  FlowSet,
   FlowStepConfig,
   FlowExecutionResponse,
   ExecutionStatus,
@@ -241,6 +242,47 @@ export const api = {
     });
     if (!res.ok) throw new Error('Error cloning flow');
     return res.json();
+  },
+
+  // Flow Sets (Suites)
+  async getFlowSets(): Promise<FlowSet[]> {
+    const res = await fetch(`${API_BASE}/flow-sets`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Error fetching flow sets');
+    return res.json();
+  },
+
+  async getFlowSet(id: string): Promise<FlowSet> {
+    const res = await fetch(`${API_BASE}/flow-sets/${id}`, { headers: getAuthHeaders() });
+    if (!res.ok) throw new Error('Error fetching flow set');
+    return res.json();
+  },
+
+  async createFlowSet(set: Partial<FlowSet>): Promise<FlowSet> {
+    const res = await fetch(`${API_BASE}/flow-sets`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(set)
+    });
+    if (!res.ok) throw new Error('Error creating flow set');
+    return res.json();
+  },
+
+  async updateFlowSet(id: string, set: Partial<FlowSet>): Promise<FlowSet> {
+    const res = await fetch(`${API_BASE}/flow-sets/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
+      body: JSON.stringify(set)
+    });
+    if (!res.ok) throw new Error('Error updating flow set');
+    return res.json();
+  },
+
+  async deleteFlowSet(id: string): Promise<void> {
+    const res = await fetch(`${API_BASE}/flow-sets/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (!res.ok) throw new Error('Error deleting flow set');
   },
 
   // Trash Bin (Soft Delete)

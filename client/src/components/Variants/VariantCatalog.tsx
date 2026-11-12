@@ -348,6 +348,7 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
       }
       handleCloseEditor();
       loadData();
+      onReloadEnvironments?.();
     } catch (err: any) {
       toast(`Error guardando: ${err.message}`, 'error');
     }
@@ -356,14 +357,14 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
   const generateVariantCurl = (variant: Variant): string => {
     const isRest = variant.apiType === 'REST';
     const method = variant.method || (isRest ? 'GET' : 'POST');
-    const targetEnv = environments.find(e => e.id === variant.environmentId) || environments[0];
+    const targetEnv = environments[0];
 
     const baseUrl = isRest
       ? (targetEnv?.magentoRestUrl || '{{magentoRestUrl}}')
       : (targetEnv?.magentoUrl || '{{magentoUrl}}');
 
-    let fullUrl = baseUrl;
-    if (isRest && variant.endpoint) {
+    let fullUrl = variant.customUrl ? variant.customUrl.trim() : baseUrl;
+    if (!variant.customUrl && isRest && variant.endpoint) {
       const ep = variant.endpoint.trim();
       if (ep.startsWith('http://') || ep.startsWith('https://')) {
         fullUrl = ep;

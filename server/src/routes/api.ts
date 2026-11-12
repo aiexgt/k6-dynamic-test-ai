@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { Database } from '../storage/db';
 import { FlowExecutionService } from '../services/executor';
 import { SchemaService } from '../services/schemaService';
-import { Variant, SavedFlow, FlowStepConfig, EnvironmentSettings, Environment, GlobalTestConfig, ApiType } from '../types';
+import { Variant, SavedFlow, FlowSet, FlowStepConfig, EnvironmentSettings, Environment, GlobalTestConfig, ApiType } from '../types';
 
 export const apiRouter = Router();
 
@@ -104,6 +104,7 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     body,
     query,
     environmentId,
+    customUrl,
     defaultVariables,
     contextOutputs,
     contextMapping,
@@ -141,6 +142,7 @@ apiRouter.post('/variants', (req: Request, res: Response) => {
     body: body || '',
     query: query || '',
     environmentId: environmentId || null,
+    customUrl: customUrl ? String(customUrl).trim() : undefined,
     defaultVariables: defaultVariables || {},
     contextOutputs: Array.isArray(contextOutputs) ? contextOutputs : [],
     contextMapping: contextMapping || {},
@@ -176,6 +178,7 @@ apiRouter.put('/variants/:id', (req: Request, res: Response) => {
     endpoint: req.body.endpoint !== undefined ? req.body.endpoint : existing.endpoint,
     body: req.body.body !== undefined ? req.body.body : existing.body,
     environmentId: req.body.environmentId !== undefined ? req.body.environmentId : existing.environmentId,
+    customUrl: req.body.customUrl !== undefined ? (req.body.customUrl ? String(req.body.customUrl).trim() : undefined) : existing.customUrl,
     customHeaders: req.body.customHeaders !== undefined ? req.body.customHeaders : existing.customHeaders,
     disabledHeaders: Array.isArray(req.body.disabledHeaders) ? req.body.disabledHeaders : existing.disabledHeaders || [],
     environmentOverrides: req.body.environmentOverrides !== undefined ? req.body.environmentOverrides : existing.environmentOverrides,
@@ -388,6 +391,74 @@ apiRouter.post('/flows/:id/clone', (req: Request, res: Response) => {
   };
   Database.upsertFlow(clone, user);
   return res.status(201).json(clone);
+});
+
+// ==========================================
+// FLOW SETS (SUITES) ROUTES
+// ==========================================
+apiRouter.get('/flow-sets', (_req: Request, res: Response) => {
+  return res.json(Database.getFlowSets());
+});
+
+apiRouter.get('/flow-sets/:id', (req: Request, res: Response) => {
+  const set = Database.getFlowSetById(req.params.id);
+  if (!set) return res.status(404).json({ error: 'Flow set not found' });
+  return res.json(set);
+});
+
+apiRouter.post('/flow-sets', (req: Request, res: Response) => {
+  const user = extractUser(req);
+  const { name, description, flowIds, delayBetweenFlowsMs, stopOnFailure } = req.body;
+  if (!name || typeof name !== 'string') {
+    return res.status(400).json({ error: 'name is required' });
+  }
+
+  const newSet: FlowSet = {
+    id: 'set-' + Date.now().toString(36) + '-' + Math.random().toString(36).substring(2, 6),
+    name: name.trim(),
+    description: description ? String(description).trim() : '',
+    flowIds: Array.isArray(flowIds) ? flowIds : [],
+    delayBetweenFlowsMs: typeof delayBetweenFlowsMs === 'number' ? delayBetweenFlowsMs : 500,
+    stopOnFailure: stopOnFailure !== false,
+    createdBy: user.email,
+    createdByName: user.name,
+    updatedBy: user.email,
+    updatedByName: user.name,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+
+  Database.upsertFlowSet(newSet, user);
+  return res.status(201).json(newSet);
+});
+
+apiRouter.put('/flow-sets/:id', (req: Request, res: Response) => {
+  const user = extractUser(req);
+  const existing = Database.getFlowSetById(req.params.id);
+  if (!existing) {
+    return res.status(404).json({ error: 'Flow set not found' });
+  }
+
+  const updated: FlowSet = {
+    ...existing,
+    name: typeof req.body.name === 'string' ? req.body.name.trim() : existing.name,
+    description: req.body.description !== undefined ? String(req.body.description).trim() : existing.description,
+    flowIds: Array.isArray(req.body.flowIds) ? req.body.flowIds : existing.flowIds,
+    delayBetweenFlowsMs: typeof req.body.delayBetweenFlowsMs === 'number' ? req.body.delayBetweenFlowsMs : existing.delayBetweenFlowsMs,
+    stopOnFailure: req.body.stopOnFailure !== undefined ? !!req.body.stopOnFailure : existing.stopOnFailure,
+    updatedBy: user.email,
+    updatedByName: user.name,
+    updatedAt: new Date().toISOString()
+  };
+
+  Database.upsertFlowSet(updated, user);
+  return res.json(updated);
+});
+
+apiRouter.delete('/flow-sets/:id', (req: Request, res: Response) => {
+  const ok = Database.deleteFlowSet(req.params.id);
+  if (!ok) return res.status(404).json({ error: 'Flow set not found' });
+  return res.json({ success: true, deletedId: req.params.id });
 });
 
 // --- TRASH BIN (SOFT DELETE RESTORATION & PURGE) ---
