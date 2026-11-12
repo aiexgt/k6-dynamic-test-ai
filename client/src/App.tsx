@@ -43,6 +43,22 @@ export function App() {
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [debugMode, setDebugMode] = useState<boolean>(() => {
+    if (typeof window !== 'undefined') return localStorage.getItem('flowrunner_debug_mode') === 'true';
+    return false;
+  });
+
+  const handleToggleXdebug = () => {
+    setDebugMode(prev => {
+      const next = !prev;
+      if (typeof window !== 'undefined') localStorage.setItem('flowrunner_debug_mode', String(next));
+      toast(
+        next ? 'Modo Xdebug activado (?XDEBUG_SESSION_START=PHPSTORM)' : 'Modo Xdebug desactivado',
+        'info'
+      );
+      return next;
+    });
+  };
 
   const handleForceSync = async () => {
     if (isSyncing) return;
@@ -315,6 +331,8 @@ export function App() {
         onSelectEnvironment={handleSelectEnvironment}
         isDark={isDark}
         onToggleTheme={handleToggleTheme}
+        isDebugMode={debugMode}
+        onToggleXdebug={handleToggleXdebug}
         onOpenSettings={() => setIsSettingsOpen(true)}
         currentUser={currentUser}
         onOpenProfile={() => setIsProfileOpen(true)}
@@ -332,6 +350,7 @@ export function App() {
             environments={environments}
             activeEnvironmentId={settings?.activeEnvironmentId}
             onNavigateToMetrics={navigateToMetrics}
+            debugMode={debugMode}
           />
         )}
         {activeTab === 'flows' && (

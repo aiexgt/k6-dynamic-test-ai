@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import {
   ListOrdered,
   Plus,
@@ -16,6 +17,7 @@ import { api } from '../../api';
 import { useFeedback } from '../../context/FeedbackContext';
 import { FlowSetExecutionModal } from './FlowSetExecutionModal';
 import { Pagination } from '../common/Pagination';
+import { SearchableSelect } from '../common/SearchableSelect';
 
 interface FlowSetsViewProps {
   environments?: Environment[];
@@ -181,28 +183,40 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
     return filteredSets.slice(start, start + pageSize);
   }, [filteredSets, page, pageSize]);
 
+  const flowSelectOptions = useMemo(() => {
+    return savedFlows.map(f => ({
+      value: f.id,
+      label: f.name,
+      sublabel: `${f.steps?.length || 0} pasos`
+    }));
+  }, [savedFlows]);
+
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <ListOrdered className="w-6 h-6 text-orange-600" />
-            <span>Sets de Flujos (Suites)</span>
-            <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
-              {flowSets.length} sets
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-            Agrupa varios flujos para ejecutarlos secuencialmente uno tras otro y analizar métricas consolidadas
-          </p>
+      {/* Top Header Standard */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+            <ListOrdered className="w-4 h-4" />
+          </div>
+          <div>
+            <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <span>Sets de Flujos (Suites)</span>
+              <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {flowSets.length} sets
+              </span>
+            </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Agrupa varios flujos para ejecutarlos secuencialmente uno tras otro y analizar métricas consolidadas
+            </p>
+          </div>
         </div>
 
         <button
           onClick={handleOpenCreate}
-          className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-md shadow-orange-600/30"
+          className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-orange-600 hover:bg-orange-700 text-white text-xs font-bold transition-all shadow-sm"
         >
-          <Plus className="w-4 h-4" />
+          <Plus className="w-3.5 h-3.5" />
           <span>Crear Nuevo Set</span>
         </button>
       </div>
@@ -330,9 +344,9 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
       />
 
       {/* Create / Edit Modal */}
-      {isEditorOpen && (
+      {isEditorOpen && createPortal(
         <div className="fixed inset-0 z-[99999] flex items-center justify-center p-3 sm:p-5 bg-slate-950/70 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl w-[94vw] max-w-4xl max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
             <div className="px-6 py-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
               <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
                 <ListOrdered className="w-4 h-4 text-orange-600" />
@@ -405,36 +419,27 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
 
               {/* Sequential Flow Selection */}
               <div className="space-y-3 pt-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-4">
                   <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
                     Flujos del Set ({formFlowIds.length})
                   </label>
 
-                  {/* Flow adder dropdown */}
-                  <div className="flex items-center gap-2">
-                    <select
-                      onChange={e => {
-                        if (e.target.value) {
-                          handleAddFlowToForm(e.target.value);
-                          e.target.value = '';
-                        }
+                  {/* Flow adder searchable select */}
+                  <div className="w-72">
+                    <SearchableSelect
+                      options={flowSelectOptions}
+                      value=""
+                      onChange={flowId => {
+                        if (flowId) handleAddFlowToForm(flowId);
                       }}
-                      className="px-2.5 py-1 text-xs rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 font-medium"
-                      defaultValue=""
-                    >
-                      <option value="" disabled>+ Añadir Flujo al Set...</option>
-                      {savedFlows.map(f => (
-                        <option key={f.id} value={f.id}>
-                          {f.name} ({f.steps?.length || 0} pasos)
-                        </option>
-                      ))}
-                    </select>
+                      placeholder="+ Buscar y añadir flujo..."
+                    />
                   </div>
                 </div>
 
                 {formFlowIds.length === 0 ? (
                   <div className="py-6 text-center rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-800 text-xs text-slate-400">
-                    Selecciona flujos arriba para ordenarlos en este set.
+                    Busca y selecciona flujos arriba para ordenarlos en este set.
                   </div>
                 ) : (
                   <div className="space-y-1.5 max-h-56 overflow-y-auto">
@@ -509,7 +514,8 @@ export const FlowSetsView: React.FC<FlowSetsViewProps> = ({
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {/* Execution Modal */}

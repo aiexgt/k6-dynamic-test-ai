@@ -102,15 +102,18 @@ export const GlobalTestsView: React.FC = () => {
 
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Top Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-500/10 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center">
+      {/* Top Header Standard */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="flex items-center gap-2.5">
+          <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
             <ShieldCheck className="w-4 h-4" />
           </div>
           <div>
-            <h1 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              Pruebas Globales (Quality Gates)
+            <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+              <span>Pruebas Globales (Quality Gates)</span>
+              <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {tests.length} reglas
+              </span>
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Reglas de validación que se ejecutan automáticamente en cada paso del flujo

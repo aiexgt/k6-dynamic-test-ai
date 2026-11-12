@@ -68,23 +68,32 @@ export const CategoriesView: React.FC<CategoriesViewProps> = ({
 
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex items-center gap-3">
+      {/* Top Header Standard */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="flex items-center gap-2.5">
           {onBack && (
             <button
               onClick={onBack}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300 text-xs font-semibold transition-colors mr-1"
+              title="Volver"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
               <span>Volver</span>
             </button>
           )}
+          <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+            <FolderTree className="w-4 h-4" />
+          </div>
           <div>
             <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-              <FolderTree className="w-5 h-5 text-orange-500" />
-              <span>Gestión de Categorías ({categories.length})</span>
+              <span>Gestión de Categorías</span>
+              <span className="text-xs font-mono font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
+                {categories.length} total
+              </span>
             </h1>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Organiza las variantes y pasos del flujo en etapas de negocio
+            </p>
           </div>
         </div>
 

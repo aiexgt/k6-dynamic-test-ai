@@ -13,7 +13,8 @@ import {
   Settings,
   Trash2,
   ListOrdered,
-  RefreshCw
+  RefreshCw,
+  Bug
 } from 'lucide-react';
 import { Environment, UserProfile } from '../types';
 import { SearchableSelect } from './common/SearchableSelect';
@@ -28,6 +29,8 @@ interface NavbarProps {
   onSelectEnvironment: (id: string) => void;
   isDark: boolean;
   onToggleTheme: () => void;
+  isDebugMode?: boolean;
+  onToggleXdebug?: () => void;
   onOpenSettings?: () => void;
   currentUser?: UserProfile;
   onOpenProfile?: () => void;
@@ -45,6 +48,8 @@ export const Navbar: React.FC<NavbarProps> = ({
   onSelectEnvironment,
   isDark,
   onToggleTheme,
+  isDebugMode = false,
+  onToggleXdebug,
   onOpenSettings,
   currentUser,
   onOpenProfile,
@@ -258,6 +263,21 @@ export const Navbar: React.FC<NavbarProps> = ({
           >
             {isDark ? <Sun className="w-3.5 h-3.5 text-amber-400" /> : <Moon className="w-3.5 h-3.5 text-slate-700" />}
           </button>
+
+          {/* Xdebug Debugger Mode Toggle (Icon only) */}
+          {onToggleXdebug && (
+            <button
+              onClick={onToggleXdebug}
+              className={`p-1.5 rounded-lg border transition-all ${
+                isDebugMode
+                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-600 dark:text-purple-400 shadow-xs'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-purple-600 dark:hover:text-purple-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={`Modo Xdebug PHP: ${isDebugMode ? 'ACTIVADO (PHPSTORM)' : 'DESACTIVADO'} — Agrega ?XDEBUG_SESSION_START=PHPSTORM`}
+            >
+              <Bug className="w-3.5 h-3.5" />
+            </button>
+          )}
 
           {/* General Settings / Tuerca */}
           <button

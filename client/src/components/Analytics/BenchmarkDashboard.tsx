@@ -291,13 +291,22 @@ export const BenchmarkDashboard: React.FC = () => {
 
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-5">
-      {/* Top Header & Main Mode Tabs */}
-      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200 dark:border-slate-800">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-            <BarChart3 className="w-5 h-5 text-orange-500" />
-            <span>Métricas &amp; Rendimiento</span>
-          </h1>
+      {/* Top Header Standard */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-200/80 dark:border-slate-800/80">
+        <div className="flex flex-wrap items-center gap-3 sm:gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-orange-500/10 dark:bg-orange-500/20 text-orange-600 dark:text-orange-400 flex items-center justify-center shrink-0">
+              <BarChart3 className="w-4 h-4" />
+            </div>
+            <div>
+              <h1 className="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-2">
+                <span>Métricas &amp; Rendimiento</span>
+              </h1>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Historial de ejecuciones, latencias y análisis de rendimiento comparativo
+              </p>
+            </div>
+          </div>
 
           {/* Mode Switcher Tabs */}
           <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 p-1 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">

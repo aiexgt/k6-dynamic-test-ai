@@ -25,7 +25,6 @@ import {
   Clock,
   X,
   BarChart3,
-  Bug,
   Users,
   RefreshCw
 } from 'lucide-react';
@@ -61,6 +60,7 @@ interface FlowRunnerProps {
   environments?: Environment[];
   activeEnvironmentId?: string;
   onNavigateToMetrics?: (executionId?: string) => void;
+  debugMode?: boolean;
 }
 
 export const FlowRunner: React.FC<FlowRunnerProps> = ({
@@ -68,7 +68,8 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   onFlowChange,
   environments: propEnvironments,
   activeEnvironmentId: propActiveEnvId,
-  onNavigateToMetrics
+  onNavigateToMetrics,
+  debugMode: propDebugMode
 }) => {
   const { toast } = useFeedback();
   const [internalEnvs, setInternalEnvs] = useState<Environment[]>([]);
@@ -136,10 +137,11 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [flowDisabledHeaders, setFlowDisabledHeaders] = useState<string[]>([]);
   const [isHeadersModalOpen, setIsHeadersModalOpen] = useState(false);
   const [isSyncingCentral, setIsSyncingCentral] = useState(false);
-  const [debugMode, setDebugMode] = useState<boolean>(() => {
+  const [internalDebugMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('flowrunner_debug_mode') === 'true';
     return false;
   });
+  const debugMode = propDebugMode !== undefined ? propDebugMode : internalDebugMode;
   const isExecutingAll = isExecutionModalOpen;
   const [copiedOrder, setCopiedOrder] = useState(false);
   const [editingVariant, setEditingVariant] = useState<Variant | null>(null);
@@ -1152,25 +1154,6 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                 )}
               </button>
             )}
-
-            {/* Botón Debugger / Xdebug */}
-            <button
-              onClick={() => {
-                const next = !debugMode;
-                setDebugMode(next);
-                if (typeof window !== 'undefined') localStorage.setItem('flowrunner_debug_mode', String(next));
-                toast(next ? 'Modo Debugger activado (?XDEBUG_SESSION_START=PHPSTORM)' : 'Modo Debugger desactivado', 'info');
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
-                debugMode
-                  ? 'bg-purple-500/15 border-purple-500/40 text-purple-600 dark:text-purple-300 font-bold'
-                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
-              }`}
-              title="Activar modo Debugger (agrega ?XDEBUG_SESSION_START=PHPSTORM y cookies de Xdebug a las peticiones)"
-            >
-              <Bug className={`w-3.5 h-3.5 ${debugMode ? 'text-purple-500' : 'text-slate-400'}`} />
-              <span>Xdebug {debugMode ? 'ON' : 'OFF'}</span>
-            </button>
 
             {/* Botón Pruebas de Carga Multi-usuario (k6) */}
             <button
