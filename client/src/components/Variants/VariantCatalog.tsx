@@ -511,22 +511,6 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     return Math.min(filteredVariants.length, currentStartItem + paginatedVariants.length - 1);
   }, [currentStartItem, paginatedVariants.length, filteredVariants.length]);
 
-  // Full-screen Variant Editor View
-  if (isEditorOpen) {
-    return (
-      <VariantEditorView
-        initialVariant={editingVariant}
-        categories={categories}
-        defaultCategory={
-          editingInitialCategory || (selectedCategoryFilter !== 'ALL' ? selectedCategoryFilter : categories[0] || 'Crear Carrito')
-        }
-        onSave={handleSaveEditor}
-        onBack={handleCloseEditor}
-        onCreateCategory={handleCreateCategory}
-      />
-    );
-  }
-
   const categoryFilterOptions = useMemo(() => {
     const list = [
       {
@@ -545,6 +529,22 @@ export const VariantCatalog: React.FC<VariantCatalogProps> = ({
     });
     return list;
   }, [categories, variants]);
+
+  // Full-screen Variant Editor View
+  if (isEditorOpen) {
+    return (
+      <VariantEditorView
+        initialVariant={editingVariant}
+        categories={categories}
+        defaultCategory={
+          editingInitialCategory || (selectedCategoryFilter !== 'ALL' ? selectedCategoryFilter : categories[0] || 'Crear Carrito')
+        }
+        onSave={handleSaveEditor}
+        onBack={handleCloseEditor}
+        onCreateCategory={handleCreateCategory}
+      />
+    );
+  }
 
   return (
     <div className="max-w-[1600px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-4">
