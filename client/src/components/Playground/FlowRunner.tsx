@@ -26,7 +26,8 @@ import {
   X,
   BarChart3,
   Bug,
-  Users
+  Users,
+  RefreshCw
 } from 'lucide-react';
 import {
   Variant,
@@ -47,6 +48,7 @@ import { SaveFlowModal } from './SaveFlowModal';
 import { FlowExecutionModal } from './FlowExecutionModal';
 import { CsvDatasetModal } from './CsvDatasetModal';
 import { LoadTestModal } from './LoadTestModal';
+import { FlowHeadersModal } from './FlowHeadersModal';
 import { VersionHistoryModal } from '../common/VersionHistoryModal';
 import { CodeEditor } from '../common/CodeEditor';
 import { VariantEditorView } from '../Variants/VariantEditorView';
@@ -130,6 +132,10 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState(false);
   const [isDatasetModalOpen, setIsDatasetModalOpen] = useState(false);
   const [isLoadTestModalOpen, setIsLoadTestModalOpen] = useState(false);
+  const [flowCustomHeaders, setFlowCustomHeaders] = useState<Record<string, string>>({});
+  const [flowDisabledHeaders, setFlowDisabledHeaders] = useState<string[]>([]);
+  const [isHeadersModalOpen, setIsHeadersModalOpen] = useState(false);
+  const [isSyncingCentral, setIsSyncingCentral] = useState(false);
   const [debugMode, setDebugMode] = useState<boolean>(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('flowrunner_debug_mode') === 'true';
     return false;
@@ -238,6 +244,8 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const serializeFlowState = (
     stepsList: FlowStepConfig[],
     currentDataset?: CsvDataset,
+    currentCustomHeaders: Record<string, string> = flowCustomHeaders,
+    currentDisabledHeaders: string[] = flowDisabledHeaders,
     variantsList: Variant[] = variants
   ) => {
     const cleaned = cleanStepsForSaving(stepsList, variantsList);
@@ -249,12 +257,15 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             headers: currentDataset.headers,
             rows: currentDataset.rows
           }
-        : null
+        : null,
+      customHeaders: currentCustomHeaders || {},
+      disabledHeaders: currentDisabledHeaders || []
     });
   };
 
   const hasUnsavedChanges =
-    steps.length > 0 && serializeFlowState(steps, dataset) !== savedSnapshot;
+    steps.length > 0 &&
+    serializeFlowState(steps, dataset, flowCustomHeaders, flowDisabledHeaders) !== savedSnapshot;
 
   // Browser reload / tab close warning if there are unsaved changes
   useEffect(() => {
@@ -449,10 +460,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
 
     setSteps(normalized);
     setDataset(flow.dataset);
+    const loadedCustomHeaders = flow.customHeaders || {};
+    const loadedDisabledHeaders = flow.disabledHeaders || [];
+    setFlowCustomHeaders(loadedCustomHeaders);
+    setFlowDisabledHeaders(loadedDisabledHeaders);
     setStepParamsJson(paramsMap);
     setStepBodyOverrides(bodyMap);
     setRawJsonOverrides(overridesMap);
-    setSavedSnapshot(serializeFlowState(normalized, flow.dataset, currentVariants));
+    setSavedSnapshot(serializeFlowState(normalized, flow.dataset, loadedCustomHeaders, loadedDisabledHeaders, currentVariants));
     if (typeof window !== 'undefined' && flow.id) {
       localStorage.setItem('flowrunner_last_flow_id', flow.id);
     }
@@ -479,10 +494,12 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     setSelectedFlowId('');
     setSteps([]);
     setDataset(undefined);
+    setFlowCustomHeaders({});
+    setFlowDisabledHeaders([]);
     resetRunState();
     setRawJsonOverrides({});
     setExpandedVars({});
-    setSavedSnapshot(serializeFlowState([], undefined, variants));
+    setSavedSnapshot(serializeFlowState([], undefined, {}, [], variants));
     onFlowChange?.('');
   };
 
@@ -512,12 +529,12 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         const unlocked = await api.unlockFlow(activeFlow.id);
         setSavedFlows(prev => prev.map(f => (f.id === unlocked.id ? unlocked : f)));
         // Requirement 2: Mantener savedSnapshot con los pasos guardados en BD para que los cambios editados muestren el botón de Guardar
-        setSavedSnapshot(serializeFlowState(unlocked.steps, unlocked.dataset));
+        setSavedSnapshot(serializeFlowState(unlocked.steps, unlocked.dataset, unlocked.customHeaders || {}, unlocked.disabledHeaders || []));
         toast('Flujo desbloqueado exitosamente', 'success');
       } else {
         const locked = await api.lockFlow(activeFlow.id);
         setSavedFlows(prev => prev.map(f => (f.id === locked.id ? locked : f)));
-        setSavedSnapshot(serializeFlowState(locked.steps, locked.dataset));
+        setSavedSnapshot(serializeFlowState(locked.steps, locked.dataset, locked.customHeaders || {}, locked.disabledHeaders || []));
         toast('Flujo marcado como bloqueado', 'success');
       }
     } catch (err: any) {
@@ -767,14 +784,16 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         name: name || existing?.name || 'Flujo de Checkout',
         description: description !== undefined ? description : existing?.description,
         steps: cleanedSteps,
-        dataset
+        dataset,
+        customHeaders: flowCustomHeaders,
+        disabledHeaders: flowDisabledHeaders
       });
       setSavedFlows(prev => prev.map(f => (f.id === updated.id ? updated : f)));
       setSelectedFlowId(updated.id);
       if (typeof window !== 'undefined' && updated.id) {
         localStorage.setItem('flowrunner_last_flow_id', updated.id);
       }
-      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset));
+      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset, flowCustomHeaders, flowDisabledHeaders));
       onFlowChange?.(updated.id);
       toast(`¡Flujo "${updated.name}" guardado con éxito!`, 'success');
     } catch (err: any) {
@@ -790,13 +809,20 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
     }
     try {
       const cleanedSteps = cleanStepsForSaving(steps);
-      const created = await api.createFlow({ name, description, steps: cleanedSteps, dataset });
+      const created = await api.createFlow({
+        name,
+        description,
+        steps: cleanedSteps,
+        dataset,
+        customHeaders: flowCustomHeaders,
+        disabledHeaders: flowDisabledHeaders
+      });
       setSavedFlows(prev => [...prev, created]);
       setSelectedFlowId(created.id);
       if (typeof window !== 'undefined' && created.id) {
         localStorage.setItem('flowrunner_last_flow_id', created.id);
       }
-      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset));
+      setSavedSnapshot(serializeFlowState(cleanedSteps, dataset, flowCustomHeaders, flowDisabledHeaders));
       onFlowChange?.(created.id);
       toast(`¡Flujo "${created.name}" guardado como nuevo!`, 'success');
     } catch (err: any) {
@@ -921,7 +947,12 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
 
     try {
       const response = await api.executeStep(
-        { ...step, debugMode: debugMode || step.debugMode },
+        {
+          ...step,
+          flowCustomHeaders,
+          flowDisabledHeaders,
+          debugMode: debugMode || step.debugMode
+        },
         executionContext,
         { debugMode },
         true,
@@ -998,6 +1029,14 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
   const totalTimeCalculated =
     executionResult?.totalTimeMs ??
     Object.values(stepResults).reduce((acc, s) => acc + (s?.durationMs || 0), 0);
+
+  const stepsWithFlowHeaders = React.useMemo(() => {
+    return steps.map(s => ({
+      ...s,
+      flowCustomHeaders,
+      flowDisabledHeaders
+    }));
+  }, [steps, flowCustomHeaders, flowDisabledHeaders]);
 
   const categoryOptions = categories.map(c => ({ value: c, label: c }));
   const flowOptions = [
@@ -1149,6 +1188,25 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
               <span>Carga / k6</span>
             </button>
 
+            {/* Botón Cabeceras del Flujo Completo */}
+            <button
+              onClick={() => setIsHeadersModalOpen(true)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition-all shadow-xs ${
+                Object.keys(flowCustomHeaders).length > 0 || flowDisabledHeaders.length > 0
+                  ? 'bg-amber-500/15 border-amber-500/40 text-amber-700 dark:text-amber-300 font-bold'
+                  : 'border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'
+              }`}
+              title="Configurar cabeceras para todo el flujo (agregar cabeceras personalizadas o cancelar cabeceras heredadas)"
+            >
+              <Sliders className="w-3.5 h-3.5 text-amber-500" />
+              <span>
+                Headers
+                {Object.keys(flowCustomHeaders).length > 0 || flowDisabledHeaders.length > 0
+                  ? ` (${Object.keys(flowCustomHeaders).length}+ / ${flowDisabledHeaders.length}-)`
+                  : ''}
+              </span>
+            </button>
+
             {/* Botón Matriz CSV / Dataset */}
             <button
               onClick={() => setIsDatasetModalOpen(true)}
@@ -1165,6 +1223,35 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
                   ? `CSV (${dataset.rows.length} Filas)`
                   : 'Matriz CSV'}
               </span>
+            </button>
+
+            {/* Botón Forzar Sincronización con BD Central */}
+            <button
+              onClick={async () => {
+                if (isSyncingCentral) return;
+                try {
+                  setIsSyncingCentral(true);
+                  const res = await api.forceSyncDatabase();
+                  await loadData();
+                  toast(
+                    `¡Sincronizado con BD Central! (${res.summary.flows} flujos, ${res.summary.variants} variantes)`,
+                    'success'
+                  );
+                } catch (err: any) {
+                  toast(`Error al sincronizar: ${err.message}`, 'error');
+                } finally {
+                  setIsSyncingCentral(false);
+                }
+              }}
+              disabled={isSyncingCentral}
+              className={`p-2 rounded-xl border transition-colors ${
+                isSyncingCentral
+                  ? 'bg-blue-500/15 border-blue-500/30 text-blue-500'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-500 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title="Forzar sincronización con base de datos central (si un compañero creó o modificó un flujo/variante y no te aparece)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncingCentral ? 'animate-spin text-blue-500' : ''}`} />
             </button>
 
             <button
@@ -2038,7 +2125,7 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         isOpen={isExecutionModalOpen}
         onClose={() => setIsExecutionModalOpen(false)}
         flowName={activeFlow?.name || 'Pipeline de Checkout'}
-        steps={steps}
+        steps={stepsWithFlowHeaders}
         variants={variants}
         dataset={dataset}
         initialContext={executionContext}
@@ -2068,7 +2155,9 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
             setSavedFlows(prev => prev.map(f => (f.id === restoredFlow.id ? restoredFlow : f)));
             setSteps(restoredFlow.steps || []);
             setDataset(restoredFlow.dataset);
-            setSavedSnapshot(serializeFlowState(restoredFlow.steps || [], restoredFlow.dataset));
+            setFlowCustomHeaders(restoredFlow.customHeaders || {});
+            setFlowDisabledHeaders(restoredFlow.disabledHeaders || []);
+            setSavedSnapshot(serializeFlowState(restoredFlow.steps || [], restoredFlow.dataset, restoredFlow.customHeaders || {}, restoredFlow.disabledHeaders || []));
           }}
         />
       )}
@@ -2091,12 +2180,31 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
         isOpen={isLoadTestModalOpen}
         onClose={() => setIsLoadTestModalOpen(false)}
         flowName={activeFlow?.name || 'Pipeline de Checkout'}
-        steps={steps}
+        steps={stepsWithFlowHeaders}
         variants={variants}
         dataset={dataset}
         initialContext={executionContext}
         debugMode={debugMode}
         onNavigateToMetrics={onNavigateToMetrics}
+      />
+
+      <FlowHeadersModal
+        isOpen={isHeadersModalOpen}
+        onClose={() => setIsHeadersModalOpen(false)}
+        flowName={activeFlow?.name || 'Flujo Actual'}
+        customHeaders={flowCustomHeaders}
+        disabledHeaders={flowDisabledHeaders}
+        environment={environments.find(e => e.id === activeEnvId) || environments[0] || null}
+        onApply={(newCustom, newDisabled) => {
+          setFlowCustomHeaders(newCustom);
+          setFlowDisabledHeaders(newDisabled);
+          const customCount = Object.keys(newCustom).length;
+          const disabledCount = newDisabled.length;
+          toast(
+            `Cabeceras de flujo actualizadas (${customCount} agregadas, ${disabledCount} canceladas)`,
+            'success'
+          );
+        }}
       />
     </div>
   );

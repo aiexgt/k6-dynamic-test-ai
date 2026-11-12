@@ -15,7 +15,8 @@ import {
   User,
   History,
   LayoutGrid,
-  List
+  List,
+  RefreshCw
 } from 'lucide-react';
 import { SavedFlow, Variant, StepExecutionResult, Environment } from '../../types';
 import { api } from '../../api';
@@ -387,8 +388,30 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
           </span>
         </h1>
 
-        {/* Selector de modo de vista: Tarjetas o Lista */}
-        <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
+        <div className="flex items-center gap-2">
+          {/* Sincronizar con BD Central */}
+          <button
+            onClick={async () => {
+              try {
+                const res = await api.forceSyncDatabase();
+                await loadFlows();
+                toast(
+                  `¡Flujos sincronizados con BD Central! (${res.summary.flows} flujos disponibles)`,
+                  'success'
+                );
+              } catch (err: any) {
+                toast(`Error al sincronizar: ${err.message}`, 'error');
+              }
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 text-xs font-semibold shadow-xs transition-colors"
+            title="Forzar sincronización con base de datos central (si un compañero creó o modificó un flujo y no te aparece)"
+          >
+            <RefreshCw className="w-3.5 h-3.5 text-blue-500" />
+            <span>Sincronizar</span>
+          </button>
+
+          {/* Selector de modo de vista: Tarjetas o Lista */}
+          <div className="flex items-center gap-1 p-1 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-xs">
           <button
             onClick={() => handleToggleViewMode('cards')}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
@@ -415,6 +438,7 @@ export const SavedFlowsList: React.FC<SavedFlowsListProps> = ({
           </button>
         </div>
       </div>
+    </div>
 
       {/* Buscador de Flujos */}
       {flows.length > 0 && (

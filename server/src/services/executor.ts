@@ -460,8 +460,11 @@ export class FlowExecutionService {
       'Content-Type': 'application/json'
     };
 
-    // Set de cabeceras canceladas explícitamente en la variante o en el paso
+    // Set de cabeceras canceladas explícitamente en el flujo, la variante o en el paso
     const canceledHeaders = new Set<string>();
+    (step.flowDisabledHeaders || []).forEach(h => {
+      if (h && typeof h === 'string') canceledHeaders.add(h.trim().toLowerCase());
+    });
     (variant.disabledHeaders || []).forEach(h => {
       if (h && typeof h === 'string') canceledHeaders.add(h.trim().toLowerCase());
     });
@@ -520,8 +523,9 @@ export class FlowExecutionService {
       headers['Authorization'] = `Bearer ${resolvedToken}`;
     }
 
-    // Cabeceras específicas de la variante y sobrescrituras en tiempo real
+    // Cabeceras específicas del flujo, de la variante y sobrescrituras en tiempo real
     const mergedCustomHeaders = {
+      ...(step.flowCustomHeaders || {}),
       ...(variant.customHeaders || {}),
       ...(step.customHeaders || {})
     };

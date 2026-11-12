@@ -12,7 +12,8 @@ import {
   ShieldAlert,
   Settings,
   Trash2,
-  ListOrdered
+  ListOrdered,
+  RefreshCw
 } from 'lucide-react';
 import { Environment, UserProfile } from '../types';
 import { SearchableSelect } from './common/SearchableSelect';
@@ -32,6 +33,8 @@ interface NavbarProps {
   onOpenProfile?: () => void;
   onOpenTrash?: () => void;
   trashCount?: number;
+  onForceSync?: () => void;
+  isSyncing?: boolean;
 }
 
 export const Navbar: React.FC<NavbarProps> = ({
@@ -46,7 +49,9 @@ export const Navbar: React.FC<NavbarProps> = ({
   currentUser,
   onOpenProfile,
   onOpenTrash,
-  trashCount = 0
+  trashCount = 0,
+  onForceSync,
+  isSyncing = false
 }) => {
   const activeEnv = environments.find(e => e.id === activeEnvironmentId);
   const envOptions = environments.map(e => ({
@@ -197,6 +202,22 @@ export const Navbar: React.FC<NavbarProps> = ({
               </span>
             )}
           </div>
+
+          {/* Central DB Sync Button */}
+          {onForceSync && (
+            <button
+              onClick={onForceSync}
+              disabled={isSyncing}
+              className={`p-1.5 rounded-lg border transition-all ${
+                isSyncing
+                  ? 'bg-blue-500/15 border-blue-500/40 text-blue-600 dark:text-blue-400'
+                  : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title="Forzar sincronización con base de datos central (útil si un compañero creó o modificó un flujo/variante y no te aparece)"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-500' : ''}`} />
+            </button>
+          )}
 
           {/* Trash Bin Button */}
           <button

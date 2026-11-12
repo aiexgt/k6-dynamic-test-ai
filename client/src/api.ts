@@ -622,5 +622,28 @@ export const api = {
     }
     const data = await res.json();
     return data.categories;
+  },
+
+  // Central DB Synchronization
+  async forceSyncDatabase(): Promise<{
+    success: boolean;
+    message: string;
+    summary: {
+      flows: number;
+      variants: number;
+      categories: number;
+      flowSets: number;
+      environments: number;
+    };
+  }> {
+    const res = await fetch(`${API_BASE}/database/sync`, {
+      method: 'POST',
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' })
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al forzar sincronización con DB Central');
+    }
+    return res.json();
   }
 };

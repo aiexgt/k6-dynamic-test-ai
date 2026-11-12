@@ -150,6 +150,8 @@ export interface FlowStepConfig {
   apiType?: ApiType;
   customHeaders?: Record<string, string>;
   disabledHeaders?: string[];
+  flowCustomHeaders?: Record<string, string>;
+  flowDisabledHeaders?: string[];
   customUrl?: string; // Link / URL personalizado para este paso
   debugMode?: boolean; // Activa modo debugger Xdebug (?XDEBUG_SESSION_START=PHPSTORM)
   contextMapping?: Record<string, string>;
@@ -170,6 +172,8 @@ export interface SavedFlow {
   steps: FlowStepConfig[];
   defaultDelayMs?: number; // Pausa / Delay global por defecto entre pasos (en ms)
   dataset?: CsvDataset;
+  customHeaders?: Record<string, string>; // Cabeceras personalizadas para todo el flujo
+  disabledHeaders?: string[]; // Cabeceras canceladas/desactivadas para todo el flujo
   isLocked?: boolean;
   lockedBy?: string;
   lockedByName?: string;

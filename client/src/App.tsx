@@ -42,6 +42,24 @@ export function App() {
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isTrashOpen, setIsTrashOpen] = useState(false);
   const [trashCount, setTrashCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleForceSync = async () => {
+    if (isSyncing) return;
+    try {
+      setIsSyncing(true);
+      const res = await api.forceSyncDatabase();
+      await loadInitialData();
+      toast(
+        `¡Sincronizado con BD Central! (${res.summary.flows} flujos, ${res.summary.variants} variantes)`,
+        'success'
+      );
+    } catch (err: any) {
+      toast(`Error al sincronizar con BD Central: ${err.message}`, 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
 
   // Navigate helper with HTML5 History API URL paths
   const navigateToTab = (tab: NavigationTab, flowId?: string) => {
@@ -302,6 +320,8 @@ export function App() {
         onOpenProfile={() => setIsProfileOpen(true)}
         onOpenTrash={() => setIsTrashOpen(true)}
         trashCount={trashCount}
+        onForceSync={handleForceSync}
+        isSyncing={isSyncing}
       />
 
       <main className="flex-1 pb-10">

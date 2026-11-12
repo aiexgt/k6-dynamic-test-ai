@@ -30,9 +30,23 @@ apiRouter.post('/auth/verify-admin', (req: Request, res: Response) => {
   return res.json({ valid: true, message: 'Autenticación de Administrador exitosa' });
 });
 
-// --- DATABASE ARCHITECTURE STATUS ---
+// --- DATABASE ARCHITECTURE STATUS & FORCED SYNC ---
 apiRouter.get('/database/status', (_req: Request, res: Response) => {
   return res.json(Database.getDatabaseStatus());
+});
+
+apiRouter.post('/database/sync', async (_req: Request, res: Response) => {
+  try {
+    const summary = await Database.forceSync();
+    return res.json({
+      success: true,
+      message: 'Sincronización con la base de datos central completada',
+      summary
+    });
+  } catch (err: any) {
+    console.error('Error durante la sincronización forzada de BD:', err);
+    return res.status(500).json({ error: `Error sincronizando datos: ${err.message}` });
+  }
 });
 
 // --- CATEGORIES ---
@@ -296,6 +310,8 @@ apiRouter.post('/flows', (req: Request, res: Response) => {
     description: description || '',
     steps: cleanedSteps,
     dataset: req.body.dataset,
+    customHeaders: req.body.customHeaders || {},
+    disabledHeaders: req.body.disabledHeaders || [],
     isLocked: false,
     createdBy: user.email,
     createdByName: user.name,
@@ -320,6 +336,8 @@ apiRouter.put('/flows/:id', (req: Request, res: Response) => {
     ...existing,
     ...req.body,
     steps: stepsToSave,
+    customHeaders: req.body.customHeaders !== undefined ? req.body.customHeaders : existing.customHeaders,
+    disabledHeaders: req.body.disabledHeaders !== undefined ? req.body.disabledHeaders : existing.disabledHeaders,
     id: existing.id,
     updatedBy: user.email,
     updatedByName: user.name,
