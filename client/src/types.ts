@@ -206,6 +206,15 @@ export interface FlowSet {
   updatedAt: string;
 }
 
+export type LoadTestVariableStrategy = 'ROUND_ROBIN' | 'RANDOM' | 'UNIQUE_EMAIL' | 'UNIQUE_ID';
+
+export interface LoadTestVariablePool {
+  id: string;
+  key: string;
+  values: string[];
+  strategy: LoadTestVariableStrategy;
+}
+
 export interface LoadTestConfig {
   vus: number; // Concurrencia de usuarios
   mode: 'ITERATIONS' | 'DURATION';
@@ -213,6 +222,8 @@ export interface LoadTestConfig {
   durationSeconds?: number;
   rampUpSeconds?: number;
   thinkTimeMs?: number;
+  variablePools?: LoadTestVariablePool[];
+  // Legacy fields kept for backwards compatibility
   skuPool?: string[];
   skuStrategy?: 'ROUND_ROBIN' | 'RANDOM';
   autoUniqueEmails?: boolean;
