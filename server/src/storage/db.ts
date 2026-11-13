@@ -436,6 +436,7 @@ export class Database {
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS dataset JSONB;
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS custom_headers JSONB DEFAULT '{}'::jsonb;
       ALTER TABLE flows ADD COLUMN IF NOT EXISTS disabled_headers JSONB DEFAULT '[]'::jsonb;
+      ALTER TABLE flows ADD COLUMN IF NOT EXISTS load_test_config JSONB;
 
       -- Central Role & Security Configuration (Authoritative in Remote Shared DB)
       CREATE TABLE IF NOT EXISTS shared_team_members (
@@ -663,6 +664,7 @@ export class Database {
           dataset: r.dataset || undefined,
           customHeaders: r.custom_headers || {},
           disabledHeaders: r.disabled_headers || [],
+          loadTestConfig: r.load_test_config || undefined,
           isLocked: !!r.is_locked,
           lockedBy: r.locked_by,
           lockedByName: r.locked_by_name,
@@ -1176,19 +1178,19 @@ export class Database {
     await pool.query(
       `INSERT INTO flows (
         id, name, description, steps, dataset,
-        custom_headers, disabled_headers,
+        custom_headers, disabled_headers, load_test_config,
         is_locked, locked_by, locked_by_name, locked_at,
         created_by, created_by_name, updated_by, updated_by_name,
         is_deleted, deleted_at, deleted_by, deleted_by_name,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       ON CONFLICT (id) DO UPDATE SET
         name = $2, description = $3, steps = $4, dataset = $5,
-        custom_headers = $6, disabled_headers = $7,
-        is_locked = $8, locked_by = $9, locked_by_name = $10, locked_at = $11,
-        updated_by = $14, updated_by_name = $15,
-        is_deleted = $16, deleted_at = $17, deleted_by = $18, deleted_by_name = $19,
-        updated_at = $21`,
+        custom_headers = $6, disabled_headers = $7, load_test_config = $8,
+        is_locked = $9, locked_by = $10, locked_by_name = $11, locked_at = $12,
+        updated_by = $15, updated_by_name = $16,
+        is_deleted = $17, deleted_at = $18, deleted_by = $19, deleted_by_name = $20,
+        updated_at = $22`,
       [
         f.id,
         f.name,
@@ -1197,6 +1199,7 @@ export class Database {
         f.dataset ? JSON.stringify(f.dataset) : null,
         JSON.stringify(f.customHeaders || {}),
         JSON.stringify(f.disabledHeaders || []),
+        f.loadTestConfig ? JSON.stringify(f.loadTestConfig) : null,
         !!f.isLocked,
         f.lockedBy || null,
         f.lockedByName || null,

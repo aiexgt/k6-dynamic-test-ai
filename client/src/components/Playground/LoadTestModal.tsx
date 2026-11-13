@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
   X,
@@ -11,14 +11,18 @@ import {
   CheckCircle2,
   Flame,
   Activity,
-  FileCode
+  FileCode,
+  Save,
+  Shuffle,
+  Sparkles
 } from 'lucide-react';
 import {
   FlowStepConfig,
   Variant,
   ExecutionContext,
   CsvDataset,
-  LoadTestMetrics
+  LoadTestMetrics,
+  LoadTestConfig
 } from '../../types';
 import { api } from '../../api';
 import { useFeedback } from '../../context/FeedbackContext';
@@ -26,35 +30,130 @@ import { useFeedback } from '../../context/FeedbackContext';
 interface LoadTestModalProps {
   isOpen: boolean;
   onClose: () => void;
+  flowId?: string;
   flowName: string;
   steps: FlowStepConfig[];
   variants: Variant[];
   dataset?: CsvDataset;
   initialContext?: ExecutionContext;
   debugMode?: boolean;
+  savedConfig?: LoadTestConfig;
+  onSaveConfig?: (config: LoadTestConfig) => Promise<void>;
   onNavigateToMetrics?: (executionId?: string) => void;
+}
+
+/**
+ * Recursively replaces `sku` and/or `email` string fields in an object/array
+ * so dynamic load-test values work even when variant variables are hardcoded.
+ */
+function applyDynamicOverrides(
+  obj: any,
+  sku?: string,
+  uniqueEmail?: string
+): any {
+  if (obj === null || obj === undefined) return obj;
+  if (Array.isArray(obj)) {
+    return obj.map(item => applyDynamicOverrides(item, sku, uniqueEmail));
+  }
+  if (typeof obj === 'object') {
+    const out: Record<string, any> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      const lower = k.toLowerCase();
+      if (sku && typeof v === 'string' && (lower === 'sku' || lower === 'product_sku' || lower === 'productsku')) {
+        out[k] = sku;
+      } else if (
+        uniqueEmail &&
+        typeof v === 'string' &&
+        (lower === 'email' || lower === 'customer_email' || lower === 'customeremail')
+      ) {
+        out[k] = uniqueEmail;
+      } else {
+        out[k] = applyDynamicOverrides(v, sku, uniqueEmail);
+      }
+    }
+    return out;
+  }
+  return obj;
 }
 
 export const LoadTestModal: React.FC<LoadTestModalProps> = ({
   isOpen,
   onClose,
+  flowId,
   flowName,
   steps,
   variants,
   dataset,
   initialContext,
   debugMode = false,
+  savedConfig,
+  onSaveConfig,
   onNavigateToMetrics
 }) => {
   const { toast } = useFeedback();
 
   // Configuration State
-  const [vus, setVus] = useState<number>(5);
-  const [mode, setMode] = useState<'ITERATIONS' | 'DURATION'>('ITERATIONS');
-  const [iterationsPerVu, setIterationsPerVu] = useState<number>(3);
-  const [durationSeconds, setDurationSeconds] = useState<number>(20);
-  const [rampUpSeconds, setRampUpSeconds] = useState<number>(0);
-  const [thinkTimeMs, setThinkTimeMs] = useState<number>(200);
+  const [vus, setVus] = useState<number>(savedConfig?.vus || 5);
+  const [mode, setMode] = useState<'ITERATIONS' | 'DURATION'>(savedConfig?.mode || 'ITERATIONS');
+  const [iterationsPerVu, setIterationsPerVu] = useState<number>(savedConfig?.iterationsPerVu || 3);
+  const [durationSeconds, setDurationSeconds] = useState<number>(savedConfig?.durationSeconds || 20);
+  const [rampUpSeconds, setRampUpSeconds] = useState<number>(savedConfig?.rampUpSeconds || 0);
+  const [thinkTimeMs, setThinkTimeMs] = useState<number>(savedConfig?.thinkTimeMs ?? 200);
+
+  // Dynamic Data Pool State
+  const [skuPoolText, setSkuPoolText] = useState<string>((savedConfig?.skuPool || []).join(', '));
+  const [skuStrategy, setSkuStrategy] = useState<'ROUND_ROBIN' | 'RANDOM'>(savedConfig?.skuStrategy || 'ROUND_ROBIN');
+  const [autoUniqueEmails, setAutoUniqueEmails] = useState<boolean>(savedConfig?.autoUniqueEmails ?? false);
+  const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
+
+  // Sync state when modal opens or savedConfig changes
+  useEffect(() => {
+    if (isOpen && savedConfig) {
+      setVus(savedConfig.vus || 5);
+      setMode(savedConfig.mode || 'ITERATIONS');
+      setIterationsPerVu(savedConfig.iterationsPerVu || 3);
+      setDurationSeconds(savedConfig.durationSeconds || 20);
+      setRampUpSeconds(savedConfig.rampUpSeconds || 0);
+      setThinkTimeMs(savedConfig.thinkTimeMs ?? 200);
+      setSkuPoolText((savedConfig.skuPool || []).join(', '));
+      setSkuStrategy(savedConfig.skuStrategy || 'ROUND_ROBIN');
+      setAutoUniqueEmails(savedConfig.autoUniqueEmails ?? false);
+    } else if (isOpen && !savedConfig) {
+      setSkuPoolText('');
+      setSkuStrategy('ROUND_ROBIN');
+      setAutoUniqueEmails(false);
+    }
+  }, [isOpen, savedConfig]);
+
+  const parsedSkus = useMemo(() => {
+    return skuPoolText
+      .split(/[\n,;]+/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }, [skuPoolText]);
+
+  const handleSaveConfigToFlow = async () => {
+    if (!onSaveConfig || !flowId) return;
+    try {
+      setIsSavingConfig(true);
+      await onSaveConfig({
+        vus,
+        mode,
+        iterationsPerVu,
+        durationSeconds,
+        rampUpSeconds,
+        thinkTimeMs,
+        skuPool: parsedSkus,
+        skuStrategy,
+        autoUniqueEmails
+      });
+      toast('Configuración de carga y SKUs guardada en este flujo', 'success');
+    } catch (err: any) {
+      toast(`Error al guardar configuración: ${err.message}`, 'error');
+    } finally {
+      setIsSavingConfig(false);
+    }
+  };
 
   // Execution Running State
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -175,11 +274,38 @@ export const LoadTestModal: React.FC<LoadTestModalProps> = ({
           logs: []
         };
 
-        // If dataset has rows, pick a row for this VU iteration
+        // If dataset has rows, distribute across VUs & iterations
         if (dataset && dataset.rows && dataset.rows.length > 0) {
-          const row = dataset.rows[(iteration - 1) % dataset.rows.length];
+          const rowIndex = (vuId + (iteration - 1) * vus) % dataset.rows.length;
+          const row = dataset.rows[rowIndex];
           vuCtx.variables = { ...vuCtx.variables, ...row };
         }
+
+        // Pick dynamic SKU from pool if configured
+        let selectedSku: string | undefined;
+        if (parsedSkus.length > 0) {
+          const skuIndex =
+            skuStrategy === 'RANDOM'
+              ? Math.floor(Math.random() * parsedSkus.length)
+              : (vuId + (iteration - 1) * vus) % parsedSkus.length;
+          selectedSku = parsedSkus[skuIndex];
+          vuCtx.variables.sku = selectedSku;
+          vuCtx.variables.SKU = selectedSku;
+          vuCtx.variables.$randomSku = selectedSku;
+        }
+
+        // Generate unique email per VU iteration if enabled
+        let uniqueEmail: string | undefined;
+        if (autoUniqueEmails) {
+          uniqueEmail = `load_vu${vuId + 1}_it${iteration}_${Math.random().toString(36).substring(2, 6)}@test.com`;
+          vuCtx.variables.email = uniqueEmail;
+          vuCtx.variables.customerEmail = uniqueEmail;
+          vuCtx.variables.customer_email = uniqueEmail;
+          vuCtx.variables.$randomEmail = uniqueEmail;
+        }
+
+        vuCtx.variables.$vu = String(vuId + 1);
+        vuCtx.variables.$iteration = String(iteration);
 
         let vuIterationSuccess = true;
 
@@ -187,11 +313,23 @@ export const LoadTestModal: React.FC<LoadTestModalProps> = ({
         for (let sIdx = 0; sIdx < activeSteps.length; sIdx++) {
           if (abortRef.current) break;
 
-          const step = activeSteps[sIdx];
+          const baseStep = activeSteps[sIdx];
+          let stepToRun: FlowStepConfig = { ...baseStep, debugMode };
+
+          // Apply dynamic SKU / Email overrides onto step variables if needed
+          if (selectedSku || uniqueEmail) {
+            const v = variants.find(vr => vr.id === baseStep.variantId);
+            const mergedStepVars = {
+              ...(v?.defaultVariables || {}),
+              ...(baseStep.overrideVariables || {})
+            };
+            stepToRun.overrideVariables = applyDynamicOverrides(mergedStepVars, selectedSku, uniqueEmail);
+          }
+
           const stepStart = performance.now();
           try {
             const res = await api.executeStep(
-              { ...step, debugMode },
+              stepToRun,
               vuCtx,
               { debugMode },
               false // No saturar cada paso individual en el historial durante load test
@@ -217,8 +355,8 @@ export const LoadTestModal: React.FC<LoadTestModalProps> = ({
             }
 
             // Step sleep if defined
-            if (step.sleepMs && step.sleepMs > 0 && !abortRef.current) {
-              await new Promise(r => setTimeout(r, step.sleepMs));
+            if (baseStep.sleepMs && baseStep.sleepMs > 0 && !abortRef.current) {
+              await new Promise(r => setTimeout(r, baseStep.sleepMs));
             }
           } catch (stepErr: any) {
             totalDone++;
@@ -232,12 +370,17 @@ export const LoadTestModal: React.FC<LoadTestModalProps> = ({
 
         // Add to log stream
         const timeStr = new Date().toLocaleTimeString();
+        const extraTags: string[] = [];
+        if (selectedSku) extraTags.push(`SKU: ${selectedSku}`);
+        if (uniqueEmail) extraTags.push(uniqueEmail);
+        const tagSuffix = extraTags.length > 0 ? ` [${extraTags.join(' · ')}]` : '';
+
         setLogs(prev => [
           {
             id: `log-${Date.now()}-${Math.random()}`,
             time: timeStr,
             vu: vuId + 1,
-            message: `VU #${vuId + 1} completó iteración ${iteration} ${vuIterationSuccess ? '✅ Exitosa' : '❌ Con fallos'}`,
+            message: `VU #${vuId + 1} completó iteración ${iteration}${tagSuffix} ${vuIterationSuccess ? '✅ Exitosa' : '❌ Con fallos'}`,
             isError: !vuIterationSuccess
           },
           ...prev.slice(0, 40)
@@ -577,11 +720,100 @@ export default function () {
                   className="w-full px-3 py-1.5 text-xs font-mono font-bold rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 disabled:opacity-50"
                 />
               </div>
+            </div>
+
+            {/* Dynamic Data Pool (SKUs & Unique Users per VU) */}
+            <div className="pt-3 border-t border-slate-200 dark:border-slate-800 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                  <Shuffle className="w-3.5 h-3.5 text-indigo-500" />
+                  <span>Datos Dinámicos por Usuario Virtual (SKUs y Correos)</span>
+                  {parsedSkus.length > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400">
+                      {parsedSkus.length} SKUs en pool
+                    </span>
+                  )}
+                </span>
+
+                <div className="flex items-center gap-2">
+                  {/* Strategy Selector */}
+                  <div className="flex items-center gap-1 bg-white dark:bg-slate-900 p-0.5 rounded-lg border border-slate-200 dark:border-slate-800 text-[11px]">
+                    <button
+                      type="button"
+                      disabled={isRunning}
+                      onClick={() => setSkuStrategy('ROUND_ROBIN')}
+                      className={`px-2 py-1 rounded-md font-semibold transition-all ${
+                        skuStrategy === 'ROUND_ROBIN'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                      }`}
+                    >
+                      Rotativo (Round-Robin)
+                    </button>
+                    <button
+                      type="button"
+                      disabled={isRunning}
+                      onClick={() => setSkuStrategy('RANDOM')}
+                      className={`px-2 py-1 rounded-md font-semibold transition-all ${
+                        skuStrategy === 'RANDOM'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'text-slate-500 dark:text-slate-400 hover:text-slate-800'
+                      }`}
+                    >
+                      Aleatorio
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 items-start">
+                <div className="md:col-span-2 space-y-1">
+                  <label className="text-[11px] font-semibold text-slate-600 dark:text-slate-400 block">
+                    Pool de SKUs a rotar (separados por coma o salto de línea):
+                  </label>
+                  <textarea
+                    rows={2}
+                    disabled={isRunning}
+                    value={skuPoolText}
+                    onChange={e => setSkuPoolText(e.target.value)}
+                    placeholder="ej: 24-MB01, 24-MB02, 24-MB03, 24-WG080 (si está vacío, usará el SKU base de la variante)"
+                    className="w-full px-3 py-2 text-xs font-mono rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 disabled:opacity-50"
+                  />
+                </div>
+
+                <div className="space-y-2.5 bg-white dark:bg-slate-900 p-3 rounded-xl border border-slate-200 dark:border-slate-800">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      disabled={isRunning}
+                      checked={autoUniqueEmails}
+                      onChange={e => setAutoUniqueEmails(e.target.checked)}
+                      className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4 cursor-pointer"
+                    />
+                    <div>
+                      <span className="text-xs font-semibold text-slate-800 dark:text-slate-200 block">
+                        Emails únicos por usuario
+                      </span>
+                      <span className="text-[10px] text-slate-400 block">
+                        Genera <code className="font-mono">load_vuX_itY@test.com</code> para evitar colisiones
+                      </span>
+                    </div>
+                  </label>
+
+                  <div className="pt-1.5 border-t border-slate-100 dark:border-slate-800 flex items-center gap-1.5 text-[10px] text-slate-400">
+                    <Sparkles className="w-3 h-3 text-indigo-500 shrink-0" />
+                    <span>
+                      Soporta <code className="font-mono text-indigo-600 dark:text-indigo-400">{'{{sku}}'}</code>,{' '}
+                      <code className="font-mono text-indigo-600 dark:text-indigo-400">{'{{$randomSku}}'}</code>,{' '}
+                      <code className="font-mono text-indigo-600 dark:text-indigo-400">{'{{$vu}}'}</code>
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
             {/* Launch / Stop Controls */}
-            <div className="pt-2 flex items-center justify-between">
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-2">
               <div className="text-xs text-slate-500 dark:text-slate-400">
                 {mode === 'ITERATIONS'
                   ? `Se realizarán aprox. ${vus * iterationsPerVu * activeSteps.length} peticiones HTTP en total.`
@@ -589,6 +821,19 @@ export default function () {
               </div>
 
               <div className="flex items-center gap-2">
+                {flowId && onSaveConfig && (
+                  <button
+                    type="button"
+                    disabled={isRunning || isSavingConfig}
+                    onClick={handleSaveConfigToFlow}
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-indigo-200 dark:border-indigo-800 bg-white dark:bg-slate-900 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 text-indigo-700 dark:text-indigo-300 text-xs font-bold transition-all shadow-2xs disabled:opacity-50"
+                    title="Guarda estos SKUs y parámetros de carga en el flujo para futuras pruebas"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>{isSavingConfig ? 'Guardando...' : 'Guardar Config en Flujo'}</span>
+                  </button>
+                )}
+
                 {isRunning ? (
                   <button
                     onClick={handleAbort}
@@ -726,7 +971,8 @@ export default function () {
             </div>
           </div>
         </div>
-      </div>,
+      </div>
+    </div>,
     document.body
   );
 };

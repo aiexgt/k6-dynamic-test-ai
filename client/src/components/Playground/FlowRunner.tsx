@@ -2162,12 +2162,19 @@ export const FlowRunner: React.FC<FlowRunnerProps> = ({
       <LoadTestModal
         isOpen={isLoadTestModalOpen}
         onClose={() => setIsLoadTestModalOpen(false)}
+        flowId={selectedFlowId || undefined}
         flowName={activeFlow?.name || 'Pipeline de Checkout'}
         steps={stepsWithFlowHeaders}
         variants={variants}
         dataset={dataset}
         initialContext={executionContext}
         debugMode={debugMode}
+        savedConfig={activeFlow?.loadTestConfig}
+        onSaveConfig={async cfg => {
+          if (!selectedFlowId) return;
+          const updated = await api.updateFlow(selectedFlowId, { loadTestConfig: cfg });
+          setSavedFlows(prev => prev.map(f => (f.id === updated.id ? updated : f)));
+        }}
         onNavigateToMetrics={onNavigateToMetrics}
       />
 

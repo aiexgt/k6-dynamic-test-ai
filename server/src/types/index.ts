@@ -184,6 +184,7 @@ export interface SavedFlow {
   dataset?: CsvDataset;
   customHeaders?: Record<string, string>; // Cabeceras personalizadas para todo el flujo
   disabledHeaders?: string[]; // Cabeceras canceladas/desactivadas para todo el flujo
+  loadTestConfig?: LoadTestConfig;
   isLocked?: boolean;
   lockedBy?: string;
   lockedByName?: string;
@@ -222,6 +223,9 @@ export interface LoadTestConfig {
   durationSeconds?: number;
   rampUpSeconds?: number;
   thinkTimeMs?: number;
+  skuPool?: string[];
+  skuStrategy?: 'ROUND_ROBIN' | 'RANDOM';
+  autoUniqueEmails?: boolean;
 }
 
 export interface LoadTestMetrics {
