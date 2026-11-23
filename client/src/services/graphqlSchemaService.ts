@@ -350,25 +350,7 @@ export const GraphQLSchemaService = {
                 const rawElem = String(elem);
                 if (rawElem.startsWith('{{') && rawElem.endsWith('}}')) return;
 
-                if ((varDef.typeString.includes('Int') || varDef.typeString.includes('Float')) && typeof elem !== 'number') {
-                  diagnostics.push({
-                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un número (${varDef.typeString}), pero se recibió "${typeof elem}".`,
-                    severity: 'error',
-                    source: 'variable'
-                  });
-                } else if (varDef.typeString.includes('Boolean') && typeof elem !== 'boolean') {
-                  diagnostics.push({
-                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un booleano (true/false), pero se recibió "${typeof elem}".`,
-                    severity: 'error',
-                    source: 'variable'
-                  });
-                } else if (varDef.typeString.includes('String') && typeof elem !== 'string') {
-                  diagnostics.push({
-                    message: `En la variable "$${varDef.name}[${elemIdx}]", se esperaba un texto (String), pero se recibió "${typeof elem}".`,
-                    severity: 'error',
-                    source: 'variable'
-                  });
-                }
+                validateScalarType(elem, varDef.typeString, `la variable "$${varDef.name}[${elemIdx}]"`, diagnostics);
               });
             }
           }
@@ -378,25 +360,7 @@ export const GraphQLSchemaService = {
             const rawVal = String(val);
             const isTemplate = rawVal.startsWith('{{') && rawVal.endsWith('}}');
             if (!isTemplate) {
-              if ((varDef.typeString.includes('Int') || varDef.typeString.includes('Float')) && typeof val !== 'number') {
-                diagnostics.push({
-                  message: `La variable "$${varDef.name}" debe ser de tipo numérico (${varDef.typeString}), pero se recibió "${typeof val}".`,
-                  severity: 'error',
-                  source: 'variable'
-                });
-              } else if (varDef.typeString.includes('Boolean') && typeof val !== 'boolean') {
-                diagnostics.push({
-                  message: `La variable "$${varDef.name}" debe ser un booleano (true/false), pero se recibió "${typeof val}".`,
-                  severity: 'error',
-                  source: 'variable'
-                });
-              } else if (varDef.typeString.includes('String') && typeof val !== 'string') {
-                diagnostics.push({
-                  message: `La variable "$${varDef.name}" debe ser de tipo texto (String), pero se recibió "${typeof val}".`,
-                  severity: 'error',
-                  source: 'variable'
-                });
-              }
+              validateScalarType(val, varDef.typeString, `La variable "$${varDef.name}"`, diagnostics);
             }
           }
 
@@ -450,48 +414,12 @@ export const GraphQLSchemaService = {
                             const rawElem = String(elem);
                             if (typeof elem === 'string' && rawElem.startsWith('{{') && rawElem.endsWith('}}')) return;
 
-                            if ((fieldDef.typeString.includes('Int') || fieldDef.typeString.includes('Float')) && typeof elem !== 'number') {
-                              diagnostics.push({
-                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un número (${fieldDef.typeString}), pero se recibió "${typeof elem}".`,
-                                severity: 'error',
-                                source: 'variable'
-                              });
-                            } else if (fieldDef.typeString.includes('Boolean') && typeof elem !== 'boolean') {
-                              diagnostics.push({
-                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un booleano (true/false), pero se recibió "${typeof elem}".`,
-                                severity: 'error',
-                                source: 'variable'
-                              });
-                            } else if (fieldDef.typeString.includes('String') && typeof elem !== 'string') {
-                              diagnostics.push({
-                                message: `En ${prefix}.${k}[${elemIdx}], se esperaba un texto (String), pero se recibió "${typeof elem}".`,
-                                severity: 'error',
-                                source: 'variable'
-                              });
-                            }
+                            validateScalarType(elem, fieldDef.typeString, `${prefix}.${k}[${elemIdx}]`, diagnostics);
                           });
                         }
                       } else {
                         // Campo escalar no-lista
-                        if ((fieldDef.typeString.includes('Int') || fieldDef.typeString.includes('Float')) && typeof fieldVal !== 'number') {
-                          diagnostics.push({
-                            message: `En ${prefix}.${k}, se esperaba un número (${fieldDef.typeString}), pero se recibió "${typeof fieldVal}".`,
-                            severity: 'error',
-                            source: 'variable'
-                          });
-                        } else if (fieldDef.typeString.includes('Boolean') && typeof fieldVal !== 'boolean') {
-                          diagnostics.push({
-                            message: `En ${prefix}.${k}, se esperaba un booleano (true/false), pero se recibió "${typeof fieldVal}".`,
-                            severity: 'error',
-                            source: 'variable'
-                          });
-                        } else if (fieldDef.typeString.includes('String') && typeof fieldVal !== 'string') {
-                          diagnostics.push({
-                            message: `En ${prefix}.${k}, se esperaba un texto (String), pero se recibió "${typeof fieldVal}".`,
-                            severity: 'error',
-                            source: 'variable'
-                          });
-                        }
+                        validateScalarType(fieldVal, fieldDef.typeString, `${prefix}.${k}`, diagnostics);
                       }
                     }
                   }
@@ -640,9 +568,9 @@ export const GraphQLSchemaService = {
           payload[input.variableName] = '{{token}}';
         } else if (input.variableName.toLowerCase().includes('order')) {
           payload[input.variableName] = '{{orderNumber}}';
-        } else if (input.typeString.includes('Int') || input.typeString.includes('Float')) {
+        } else if (['Int', 'Float'].includes(getBaseTypeName(input.typeString))) {
           payload[input.variableName] = 1;
-        } else if (input.typeString.includes('Boolean')) {
+        } else if (getBaseTypeName(input.typeString) === 'Boolean') {
           payload[input.variableName] = true;
         } else {
           payload[input.variableName] = '';
@@ -722,9 +650,9 @@ function generateExampleObjectFromFields(fields: InputFieldDoc[]): Record<string
         result[f.name] = 1;
       } else if (f.name.toLowerCase().includes('item_id') || f.name.toLowerCase().includes('cart_item_id')) {
         result[f.name] = 1;
-      } else if (f.typeString.includes('Int') || f.typeString.includes('Float')) {
+      } else if (['Int', 'Float'].includes(getBaseTypeName(f.typeString))) {
         result[f.name] = 1;
-      } else if (f.typeString.includes('Boolean')) {
+      } else if (getBaseTypeName(f.typeString) === 'Boolean') {
         result[f.name] = true;
       } else if (f.isList) {
         result[f.name] = [];
@@ -753,4 +681,44 @@ function getNamedTypeFromAST(typeNode: any): string {
     curr = curr.type;
   }
   return curr.name.value;
+}
+
+/**
+ * Extracts the base GraphQL type name by stripping list brackets and non-null markers.
+ */
+function getBaseTypeName(typeString: string): string {
+  return typeString.replace(/[\[\]!]/g, '').trim();
+}
+
+/**
+ * Validates a value against a GraphQL scalar type using exact base type matching
+ * so complex input/enum names (e.g. LinkedIntangibleInput) are not misidentified as scalars.
+ */
+function validateScalarType(
+  val: any,
+  typeString: string,
+  pathLabel: string,
+  diagnostics: ValidationDiagnostic[]
+): void {
+  const baseType = getBaseTypeName(typeString);
+
+  if ((baseType === 'Int' || baseType === 'Float') && typeof val !== 'number') {
+    diagnostics.push({
+      message: `En ${pathLabel}, se esperaba un número (${typeString}), pero se recibió "${typeof val}".`,
+      severity: 'error',
+      source: 'variable'
+    });
+  } else if (baseType === 'Boolean' && typeof val !== 'boolean') {
+    diagnostics.push({
+      message: `En ${pathLabel}, se esperaba un booleano (true/false), pero se recibió "${typeof val}".`,
+      severity: 'error',
+      source: 'variable'
+    });
+  } else if (baseType === 'String' && typeof val !== 'string') {
+    diagnostics.push({
+      message: `En ${pathLabel}, se esperaba un texto (String), pero se recibió "${typeof val}".`,
+      severity: 'error',
+      source: 'variable'
+    });
+  }
 }
